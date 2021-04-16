@@ -1,10 +1,9 @@
 
 import torch.nn as nn
-from .memory_saving import custom_relu, custom_conv_bn, custom_conv
+from .custom_layers import custom_relu, custom_conv_bn, custom_conv
 
 def ReLU(inplace=True):
     return custom_relu(inplace)
-
 
 def Conv2d(in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, memory_saving=False, args=None, force_fp=False):
     if args is not None and hasattr(args, 'keyword'):

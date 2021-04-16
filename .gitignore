@@ -26,6 +26,10 @@ log
 *.swk
 *.swi
 
+build/
+dist/
+*.egg-info/
+
 # env
 .env
 

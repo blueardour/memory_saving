@@ -2,13 +2,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 import copy
-import setuptools
-from torch.utils.cpp_extension import load
-from .packbit import packbits_padded, unpackbits_padded
 
-native = load(name='native', sources=['./native.cpp'])
+import _ms.native as native
+from .packbit import packbits_padded, unpackbits_padded
 
 ##########
 class Round(torch.autograd.Function):
