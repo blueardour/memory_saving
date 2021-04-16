@@ -2,11 +2,13 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+import copy
 import setuptools
-
 from torch.utils.cpp_extension import load
+from .packbit import packbits_padded, unpackbits_padded
 
-conv = load(name='conv', sources=['./conv2d.cpp'])
+native = load(name='native', sources=['./native.cpp'])
 
 ##########
 class Round(torch.autograd.Function):
@@ -23,13 +25,17 @@ class conv2d(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input, weight, bias, stride, padding, dilation, groups, clip=None, level=255):
         # quant
-        x = input.div(clip)
-        x = torch.clamp(x, min=0, max=1).mul(level)
-        x = Round.apply(x)
-        y = x.to(dtype=torch.uint8)
+        if level < 256:
+            x = input.div(clip)
+            x = torch.clamp(x, min=0, max=1).mul(level)
+            x = Round.apply(x)
+            y = x.to(dtype=torch.uint8)
+            x = x.mul(clip / level)
+        else:
+            x = input
+            y = input
 
         # conv
-        x = x.mul(clip / level)
         x = F.conv2d(x, weight, bias, stride, padding, dilation, groups)
 
         # save tensor
@@ -44,25 +50,32 @@ class conv2d(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
         grad_input, grad_weight, grad_bias, grad_clip = None, None, None, None
-        y, weight, bias, clip = ctx.saved_tensors
-        x = y.to(dtype=torch.float)
 
+        # restore
+        y, weight, bias, clip = ctx.saved_tensors
         stride = ctx.stride
         padding = ctx.padding
         dilation = ctx.dilation
         groups = ctx.groups
         level = ctx.level
-        x = x.mul(clip / level)
 
+        if level < 256:
+            x = y.to(dtype=torch.float)
+            x = x.mul(clip / level)
+        else:
+            x = y
+
+        # conv
         benchmark = True
         deterministic = True
         output_mask = ctx.needs_input_grad[:2]
-        grad_input, grad_weight = conv.conv2d_backward(x, grad_output, weight, padding, stride, dilation, groups, benchmark, deterministic, output_mask)
+        grad_input, grad_weight = native.conv2d_backward(x, grad_output, weight, padding, stride, dilation, groups, benchmark, deterministic, output_mask)
 
         if bias is not None and ctx.needs_input_grad[2]:
             grad_bias = grad_output.sum((0,2,3)).squeeze(0)
 
-        return grad_input, grad_weight, grad_bias, None, None, None, None, grad_clip, None
+        return grad_input, grad_weight, grad_bias, None, None, None, None, \
+                grad_clip, None
 
 
 class custom_conv(nn.Conv2d):
@@ -86,11 +99,9 @@ class custom_conv(nn.Conv2d):
 
         if args is not None:
             if hasattr(args, 'fm_bit') and args.fm_bit is not None and args.fm_bit <= 8:
-                self.fm_intervals = int(2 ** args.fm_bit)
+                self.fm_intervals = int(2 ** args.fm_bit) - 1
             if hasattr(args, 'fm_level') and args.fm_level is not None and args.fm_level <= 256:
                 self.fm_intervals = args.fm_level
-
-        self.fm_intervals = self.fm_intervals - 1
 
         string = string + "-clip_val({})-intervals({})".format(self.fm_clip_val.item(), self.fm_intervals)
         if self.memory_saving:
@@ -110,6 +121,30 @@ class custom_conv(nn.Conv2d):
         else:
             y = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
         return y
+
+class batchnorm2d(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input, bn_weight, bn_bias, average_factor, bn_training, need_sync, process_group, world_size, bn_mean, bn_var, bn_eps):
+        output, save_mean, save_var, reverse = native.batch_norm_forward(input, bn_weight, bn_bias, bn_mean, bn_var, bn_training, average_factor, bn_eps)
+        ctx.save_for_backward(input, bn_weight, bn_mean, bn_var, save_mean, save_var, reverse)
+        return output
+
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        input, weight, running_mean, running_var, save_mean, save_var, reverse = ctx.saved_tensors
+        grad_input, grad_weight, grad_bias = native.batch_norm_backward(input, grad_output, weight, running_mean, running_var, save_mean, save_var, 0, reverse);
+
+        if not ctx.needs_input_grad[0]:
+            grad_input = None
+
+        if not ctx.needs_input_grad[1]:
+            grad_weight = None
+
+        if not ctx.needs_input_grad[2]:
+            grad_bias = None
+
+        return grad_input, grad_weight, grad_bias, None, None, None, None, None, None, None, None
 
 def SyncBatchNorm_forward(self, input, weight, bias, running_mean, running_var, eps, momentum, process_group, world_size):
     if not input.is_contiguous(memory_format=torch.channels_last):
@@ -230,24 +265,14 @@ class conv2d_bn(torch.autograd.Function):
         # bn
         ctx.need_sync = need_sync
         if not need_sync:
-            x = F.batch_norm(x, bn_mean, bn_var, bn_weight, bn_bias, bn_training, average_factor, bn_eps)
-            bn_scale = bn_weight * (bn_var + bn_eps).rsqrt()
-            if bn_bias is not None:
-                bn_bias = bn_bias - bn_mean * bn_scale
-            else:
-                bn_bias = - bn_mean * bn_scale
-            ctx.bn_scale = bn_scale.reshape(1, -1, 1, 1).detach()
-            ctx.bn_bias = bn_bias.reshape(1, -1, 1, 1).detach()
-            ctx.bn_weight = bn_weight.reshape(1, -1, 1, 1).detach()
+            x, save_mean, save_var, reverse = native.batch_norm_forward(x, bn_weight, bn_bias, bn_mean, bn_var, bn_training, average_factor, bn_eps)
+            ctx.bn = (bn_weight, bn_mean, bn_var, save_mean, save_var, reverse)
         else:
             x = SyncBatchNorm_forward(ctx, x, bn_weight, bn_bias, bn_mean, bn_var, bn_eps, average_factor, process_group, world_size)
 
         # save tensor
         ctx.save_for_backward(y, weight, bias, clip)
-        ctx.stride = stride
-        ctx.padding = padding
-        ctx.dilation = dilation
-        ctx.groups = groups
+        ctx.conv = (stride, padding, dilation, groups)
         ctx.level = level
         return x
 
@@ -257,16 +282,11 @@ class conv2d_bn(torch.autograd.Function):
 
         # restore
         y, weight, bias, clip = ctx.saved_tensors
-        stride = ctx.stride
-        padding = ctx.padding
-        dilation = ctx.dilation
-        groups = ctx.groups
+        stride, padding, dilation, groups = ctx.conv
         level = ctx.level
         need_sync = ctx.need_sync
         if not need_sync:
-            bn_scale = ctx.bn_scale
-            bn_bias = ctx.bn_bias
-            bn_weight = ctx.bn_weight
+            bn_weight, bn_mean, bn_var, save_mean, save_var, reverse = ctx.bn
         else:
             bn_weight = self.bn_weight
             bn_mean = self.bn_mean
@@ -285,14 +305,12 @@ class conv2d_bn(torch.autograd.Function):
 
         # bn
         if not need_sync:
-            grad_input = grad_output * bn_scale
-            if ctx.needs_input_grad[7]:
-                grad_bn_weight = grad_output * (z - bn_bias).div(bn_weight)
-                grad_bn_weight = grad_bn_weight.sum(dim=[0,2,3])
+            grad_output, grad_bn_weight, grad_bn_bias = native.batch_norm_backward(z, grad_output, bn_weight, bn_mean, bn_var, save_mean, save_var, 0, reverse);
+            if not ctx.needs_input_grad[7]:
+                grad_bn_weight = None
 
-            if ctx.needs_input_grad[8]:
-                grad_bn_bias = grad_output.sum(dim=[0,2,3])
-            grad_output = grad_input
+            if not ctx.needs_input_grad[8]:
+                grad_bn_bias = None
         else:
             grad_output, grad_bn_weight, grad_bn_bias = SyncBatchNorm_backward(z, bn_weight, bn_mean, bn_invstd, bn_count_all, bn_process_group, \
                     ctx.needs_input_grad[7:9], grad_output)
@@ -302,12 +320,11 @@ class conv2d_bn(torch.autograd.Function):
         benchmark = True
         deterministic = True
         output_mask = ctx.needs_input_grad[:2]
-        grad_input, grad_weight = conv.conv2d_backward(x, grad_output, weight, padding, stride, dilation, groups, benchmark, deterministic, output_mask)
+        grad_input, grad_weight = native.conv2d_backward(x, grad_output, weight, padding, stride, dilation, groups, benchmark, deterministic, output_mask)
 
         if bias is not None and ctx.needs_input_grad[2]:
             grad_bias = grad_output.sum((0,2,3)).squeeze(0)
 
-        grad_output = None
         return grad_input, grad_weight, grad_bias, None, None, None, None, \
                 grad_bn_weight, grad_bn_bias, None, None, None, None, None, None, None, None, \
                 grad_clip, None
@@ -332,8 +349,12 @@ class custom_conv_bn(nn.Conv2d):
             string = string + "-BatchNorm2d"
 
         self.memory_saving = memory_saving
-        if args is not None and hasattr(args, 'keyword') and hasattr(args, 'fm_enable'):
-            self.memory_saving = self.memory_saving or args.fm_enable
+        self.test_ms_bn = False
+        if args is not None and hasattr(args, 'keyword'):
+            if hasattr(args, 'fm_enable'):
+                self.memory_saving = self.memory_saving or args.fm_enable
+            if 'test_ms_bn' in args.keyword:
+                self.test_ms_bn = True
 
         # lsq
         self.fm_clip_val = nn.Parameter(torch.Tensor([1.0]))
@@ -341,15 +362,15 @@ class custom_conv_bn(nn.Conv2d):
 
         if args is not None:
             if hasattr(args, 'fm_bit') and args.fm_bit is not None and args.fm_bit <= 8:
-                self.fm_intervals = int(2 ** args.fm_bit)
+                self.fm_intervals = int(2 ** args.fm_bit) - 1
             if hasattr(args, 'fm_level') and args.fm_level is not None and args.fm_level <= 256:
                 self.fm_intervals = args.fm_level
-
-        self.fm_intervals = self.fm_intervals - 1
 
         string = string + "-enable({})-FM(clip_val({})-intervals({}))".format(self.memory_saving, self.fm_clip_val.item(), self.fm_intervals)
         if self.memory_saving:
             self.string = string
+        elif self.test_ms_bn:
+            self.string = "Conv2d + custom_BN in ms"
         else:
             self.string = "Conv2d + BN in ms"
 
@@ -418,41 +439,114 @@ class custom_conv_bn(nn.Conv2d):
                     self.fm_clip_val.abs(), self.fm_intervals)
         else:
             x = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
-            y = self.norm(x)
+            if self.test_ms_bn:
+                average_factor, bn_training, running_mean, running_var, need_sync, process_group, world_size = self.forward_bn(x)
+                y = batchnorm2d.apply(x, self.norm.weight, self.norm.bias, average_factor, bn_training, need_sync, process_group, world_size, \
+                        running_mean, running_var, self.norm.eps)
+            else:
+                y = self.norm(x)
 
         return y
 
 class relu(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, inplace=False):
+    def forward(ctx, x, inplace=False, dim=1):
         y = x < 0
-        ctx.save_for_backward(y)
         #x = x.clamp(min=0)  # faster
         if inplace:
             x[y] = 0
         else:
             x = torch.where(y, torch.zeros_like(x), x)
+
+        z = packbits_padded(y, dim=dim) 
+        #y1 = unpackbits_padded(z)
+        #print(y.sum(), y.numel(), z.dtype, z.numel())
+        #print((y == y1).sum())
+        ctx.save_for_backward(z)
+        ctx.dim = dim
         return x
 
     @staticmethod
     def backward(ctx, grad_output):
-        y, = ctx.saved_tensors
+        z, = ctx.saved_tensors
+        y = unpackbits_padded(z, dim=ctx.dim)
         #grad_output[y] = 0 # more memory ?
         grad_output = torch.where(y, torch.zeros_like(grad_output), grad_output)
-        return grad_output, None
+        return grad_output, None, None
 
 class custom_relu(nn.ReLU):
-    def __init__(self, inplace=True):
+    def __init__(self, inplace=True, dim=1):
         super(custom_relu, self).__init__(inplace)
         self.inplace = inplace
+        self.dim = dim
 
     def __repr__(self):
         return self.__str__()
 
     def __str__(self):
-        return "ms.ReLU(False)"
+        return "ms.ReLU(inplace = Forcefully False, dim={})".format(self.dim)
 
     def forward(self, x):
         y = relu.apply(x)
         return y
+
+def test_relu():
+    model = custom_relu()
+    x = torch.rand(512,64,56,56)
+    x = x - x.mean()
+    x = x.cuda()
+    y = model(x)
+
+def test_conv():
+    model = custom_conv_bn(64, 64, 3, bias=False)
+    model = model.cuda()
+    model.train()
+
+    model1 = copy.deepcopy(model)
+    model1.test_ms_bn = True
+    model1.train()
+
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
+    optimizer.zero_grad()
+    optimizer1 = torch.optim.SGD(model1.parameters(), lr=0.1, momentum=0.9)
+    optimizer1.zero_grad()
+    for i in range(2):
+        print("index: ", i)
+        x = torch.rand(512,64,56,56)
+        x = x.cuda()
+
+        y = model(x)
+        z = y.sum()
+        z.backward()
+
+        y1 = model1(x)
+        z1 = y1.sum()
+        z1.backward()
+
+        print('z: ', (z1 - z).item(), (z1 - z) / z, (z1 - z) / x.numel())
+
+    for k, v in model.named_parameters():
+        if v is not None and hasattr(v, 'grad') and v.grad is not None:
+            print("{}: val {}-{}; grad {}-{}".format(k, v.max(), v.min(), v.grad.max(), v.grad.min()))
+        else:
+            print("{}: val {}-{}".format(k, v.max(), v.min()))
+
+    for k, v in model1.named_parameters():
+        if v is not None and hasattr(v, 'grad') and v.grad is not None:
+            print("{}: val {}-{}; grad {}-{}".format(k, v.max(), v.min(), v.grad.max(), v.grad.min()))
+        else:
+            print("{}: val {}-{}".format(k, v.max(), v.min()))
+
+    for k, v in list(model.state_dict().items()):
+        if 'running' in k:
+            print(k, v.max(), v.min())
+
+    for k, v in list(model1.state_dict().items()):
+        if 'running' in k:
+            print(k, v.max(), v.min())
+
+if __name__ == "__main__":
+    #test_conv()
+    test_relu()
+
 
