@@ -3,34 +3,33 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import copy
+import sys
+from gpuinfo import GPUInfo
 
 import _ms.native as native
-from .packbit import packbits_padded, unpackbits_padded
 
-##########
-class Round(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, x):
-        return torch.round(x)
-        return x
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        return grad_output, None
+if __name__ == "__main__":
+    from packbit import packbits_padded, unpackbits_padded
+else:
+    from .packbit import packbits_padded, unpackbits_padded
 
 class conv2d(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, input, weight, bias, stride, padding, dilation, groups, clip=None, level=255):
+    def forward(ctx, x, weight, bias, stride, padding, dilation, groups, clip=None, level=255):
         # quant
         if level < 256:
-            x = input.div(clip)
-            x = torch.clamp(x, min=0, max=1).mul(level)
-            x = Round.apply(x)
-            y = x.to(dtype=torch.uint8)
-            x = x.mul(clip / level)
+            if isinstance(clip, torch.Tensor) and clip.dtype != x.dtype:
+                clip = clip.half()
+            index = x.ge(clip.item())
+            x = torch.where(index, clip, x)
+            scale = clip / (float)level
+            x.div_(scale)
+            y = torch.round(x)
+            x.sub_(y)
+            x = x.mul(-1.0 / level)
+            #y = x.to(dtype=torch.uint8)
         else:
-            x = input
-            y = input
+            y = x
 
         # conv
         x = F.conv2d(x, weight, bias, stride, padding, dilation, groups)
@@ -59,14 +58,21 @@ class conv2d(torch.autograd.Function):
         if level < 256:
             x = y.to(dtype=torch.float)
             x = x.mul(clip / level)
+            grad_clip = None
         else:
             x = y
 
         # conv
         benchmark = True
         deterministic = True
+        allow_tf32 = True
         output_mask = ctx.needs_input_grad[:2]
-        grad_input, grad_weight = native.conv2d_backward(x, grad_output, weight, padding, stride, dilation, groups, benchmark, deterministic, output_mask)
+        if torch.__version__ >= "1.7":
+            grad_input, grad_weight = native.conv2d_backward(x, grad_output, weight, padding, stride, dilation, groups, \
+                    benchmark, deterministic, allow_tf32, output_mask)
+        else:
+            grad_input, grad_weight = native.conv2d_backward(x, grad_output, weight, padding, stride, dilation, groups, \
+                    benchmark, deterministic, output_mask)
 
         if bias is not None and ctx.needs_input_grad[2]:
             grad_bias = grad_output.sum((0,2,3)).squeeze(0)
@@ -76,8 +82,10 @@ class conv2d(torch.autograd.Function):
 
 
 class custom_conv(nn.Conv2d):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, memory_saving=False, args=None):
-        super(custom_conv, self).__init__(in_channels, out_channels, kernel_size, stride=stride, padding=padding, dilation=dilation, groups=groups, bias=bias)
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, \
+            memory_saving=False, args=None):
+        super(custom_conv, self).__init__(in_channels, out_channels, kernel_size, stride=stride, padding=padding, \
+                dilation=dilation, groups=groups, bias=bias)
 
         # constraints
         if self.padding_mode != 'zeros':
@@ -114,7 +122,8 @@ class custom_conv(nn.Conv2d):
 
     def forward(self, x):
         if self.memory_saving:
-            y = conv2d.apply(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups, self.fm_clip_val.abs(), self.fm_intervals)
+            y = conv2d.apply(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups, \
+                    self.fm_clip_val.abs(), self.fm_intervals)
         else:
             y = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
         return y
@@ -122,7 +131,8 @@ class custom_conv(nn.Conv2d):
 class batchnorm2d(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input, bn_weight, bn_bias, average_factor, bn_training, need_sync, process_group, world_size, bn_mean, bn_var, bn_eps):
-        output, save_mean, save_var, reverse = native.batch_norm_forward(input, bn_weight, bn_bias, bn_mean, bn_var, bn_training, average_factor, bn_eps)
+        output, save_mean, save_var, reverse = native.batch_norm_forward(input, bn_weight, bn_bias, bn_mean, bn_var, \
+                bn_training, average_factor, bn_eps)
         ctx.save_for_backward(input, bn_weight, bn_mean, bn_var, save_mean, save_var, reverse)
         return output
 
@@ -130,7 +140,8 @@ class batchnorm2d(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
         input, weight, running_mean, running_var, save_mean, save_var, reverse = ctx.saved_tensors
-        grad_input, grad_weight, grad_bias = native.batch_norm_backward(input, grad_output, weight, running_mean, running_var, save_mean, save_var, 0, reverse);
+        grad_input, grad_weight, grad_bias = native.batch_norm_backward(input, grad_output, weight, running_mean, running_var, \
+                save_mean, save_var, 0, reverse);
 
         if not ctx.needs_input_grad[0]:
             grad_input = None
@@ -252,6 +263,7 @@ class conv2d_bn(torch.autograd.Function):
             x = Round.apply(x)
             y = x.to(dtype=torch.uint8)
             x = x.mul(clip / level)
+            #print("debug", sys.getsizeof(x.storage()), sys.getsizeof(y.storage()), x.device, y.device, x.dtype, y.dtype)
         else:
             x = input
             y = input
@@ -262,7 +274,8 @@ class conv2d_bn(torch.autograd.Function):
         # bn
         ctx.need_sync = need_sync
         if not need_sync:
-            x, save_mean, save_var, reverse = native.batch_norm_forward(x, bn_weight, bn_bias, bn_mean, bn_var, bn_training, average_factor, bn_eps)
+            x, save_mean, save_var, reverse = native.batch_norm_forward(x, bn_weight, bn_bias, bn_mean, bn_var, bn_training, \
+                    average_factor, bn_eps)
             ctx.bn = (bn_weight, bn_mean, bn_var, save_mean, save_var, reverse)
         else:
             x = SyncBatchNorm_forward(ctx, x, bn_weight, bn_bias, bn_mean, bn_var, bn_eps, average_factor, process_group, world_size)
@@ -302,22 +315,29 @@ class conv2d_bn(torch.autograd.Function):
 
         # bn
         if not need_sync:
-            grad_output, grad_bn_weight, grad_bn_bias = native.batch_norm_backward(z, grad_output, bn_weight, bn_mean, bn_var, save_mean, save_var, 0, reverse);
+            grad_output, grad_bn_weight, grad_bn_bias = native.batch_norm_backward(z, grad_output, bn_weight, bn_mean, bn_var, \
+                    save_mean, save_var, 0, reverse);
             if not ctx.needs_input_grad[7]:
                 grad_bn_weight = None
 
             if not ctx.needs_input_grad[8]:
                 grad_bn_bias = None
         else:
-            grad_output, grad_bn_weight, grad_bn_bias = SyncBatchNorm_backward(z, bn_weight, bn_mean, bn_invstd, bn_count_all, bn_process_group, \
-                    ctx.needs_input_grad[7:9], grad_output)
+            grad_output, grad_bn_weight, grad_bn_bias = SyncBatchNorm_backward(z, bn_weight, bn_mean, bn_invstd, bn_count_all, \
+                    bn_process_group, ctx.needs_input_grad[7:9], grad_output)
         z = None
 
         # conv
         benchmark = True
         deterministic = True
+        allow_tf32 = True
         output_mask = ctx.needs_input_grad[:2]
-        grad_input, grad_weight = native.conv2d_backward(x, grad_output, weight, padding, stride, dilation, groups, benchmark, deterministic, output_mask)
+        if torch.__version__ >= "1.7":
+            grad_input, grad_weight = native.conv2d_backward(x, grad_output, weight, padding, stride, dilation, groups, \
+                    benchmark, deterministic, allow_tf32, output_mask)
+        else:
+            grad_input, grad_weight = native.conv2d_backward(x, grad_output, weight, padding, stride, dilation, groups, \
+                    benchmark, deterministic, output_mask)
 
         if bias is not None and ctx.needs_input_grad[2]:
             grad_bias = grad_output.sum((0,2,3)).squeeze(0)
@@ -327,8 +347,10 @@ class conv2d_bn(torch.autograd.Function):
                 grad_clip, None
 
 class custom_conv_bn(nn.Conv2d):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, memory_saving=False, args=None):
-        super(custom_conv_bn, self).__init__(in_channels, out_channels, kernel_size, stride=stride, padding=padding, dilation=dilation, groups=groups, bias=bias)
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, \
+            memory_saving=False, args=None):
+        super(custom_conv_bn, self).__init__(in_channels, out_channels, kernel_size, stride=stride, padding=padding, \
+                dilation=dilation, groups=groups, bias=bias)
 
         # constraints
         if self.padding_mode != 'zeros':
@@ -363,19 +385,19 @@ class custom_conv_bn(nn.Conv2d):
             if hasattr(args, 'fm_level') and args.fm_level is not None and args.fm_level <= 256:
                 self.fm_intervals = args.fm_level
 
-        string = string + "-enable({})-FM(clip_val({})-intervals({}))".format(self.memory_saving, self.fm_clip_val.item(), self.fm_intervals)
-        if self.memory_saving:
-            self.string = string
-        elif self.test_ms_bn:
-            self.string = "Conv2d + custom_BN in ms"
-        else:
-            self.string = "Conv2d + BN in ms"
+        self.string = string
 
     def __repr__(self):
         return self.__str__()
 
     def __str__(self):
-        return self.string
+        if self.memory_saving:
+            return self.string + "-enable({})-FM(clip_val({})-intervals({}))".format(
+                    self.memory_saving, self.fm_clip_val.item(), self.fm_intervals)
+        elif self.test_ms_bn:
+            return "Conv2d + custom_BN in ms"
+        else:
+            return "Conv2d + BN in ms"
 
     def forward_bn(self, input):
         self.norm._check_input_dim(input)
@@ -431,15 +453,15 @@ class custom_conv_bn(nn.Conv2d):
     def forward(self, x):
         if self.memory_saving:
             average_factor, bn_training, running_mean, running_var, need_sync, process_group, world_size = self.forward_bn(x)
-            y = conv2d_bn.apply(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups,\
-                    self.norm.weight, self.norm.bias, average_factor, bn_training, need_sync, process_group, world_size, running_mean, running_var, self.norm.eps,\
-                    self.fm_clip_val.abs(), self.fm_intervals)
+            y = conv2d_bn.apply(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups, \
+                    self.norm.weight, self.norm.bias, average_factor, bn_training, need_sync, process_group, world_size, \
+                    running_mean, running_var, self.norm.eps, self.fm_clip_val.abs(), self.fm_intervals)
         else:
             x = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
             if self.test_ms_bn:
                 average_factor, bn_training, running_mean, running_var, need_sync, process_group, world_size = self.forward_bn(x)
-                y = batchnorm2d.apply(x, self.norm.weight, self.norm.bias, average_factor, bn_training, need_sync, process_group, world_size, \
-                        running_mean, running_var, self.norm.eps)
+                y = batchnorm2d.apply(x, self.norm.weight, self.norm.bias, average_factor, bn_training, need_sync, \
+                        process_group, world_size, running_mean, running_var, self.norm.eps)
             else:
                 y = self.norm(x)
 
@@ -472,19 +494,26 @@ class relu(torch.autograd.Function):
         return grad_output, None, None
 
 class custom_relu(nn.ReLU):
-    def __init__(self, inplace=True, dim=1):
+    def __init__(self, inplace=True, dim=1, memory_saving=False):
         super(custom_relu, self).__init__(inplace)
         self.inplace = inplace
         self.dim = dim
+        self.memory_saving = memory_saving
 
     def __repr__(self):
         return self.__str__()
 
     def __str__(self):
-        return "ms.ReLU(inplace = Forcefully False, dim={})".format(self.dim)
+        if self.memory_saving:
+            return "ms.ReLU(inplace = Forcefully False, dim={})".format(self.dim)
+        else:
+            return 'nn.ReLU'
 
     def forward(self, x):
-        y = relu.apply(x)
+        if self.memory_saving:
+            y = relu.apply(x)
+        else:
+            y = F.relu(x, inplace=self.inplace)
         return y
 
 def test_relu():
@@ -500,8 +529,11 @@ def test_conv():
     model.train()
 
     model1 = copy.deepcopy(model)
-    model1.test_ms_bn = True
     model1.train()
+
+    model1.test_ms_bn = True
+    model.memory_saving = True
+    model.fm_intervals = 255
 
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
     optimizer.zero_grad()
@@ -542,8 +574,93 @@ def test_conv():
         if 'running' in k:
             print(k, v.max(), v.min())
 
+def profile_conv():
+    #print("start precent / memory: %r, %r" % GPUInfo.gpu_usage())
+    nn.Conv2d = custom_conv_bn
+    nn.ReLU = custom_relu
+    model = nn.Sequential(
+            nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
+            #nn.BatchNorm2d(64),
+            nn.ReLU(True),
+            nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
+            #nn.BatchNorm2d(64),
+            nn.ReLU(True),
+            nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
+            #nn.BatchNorm2d(64),
+            nn.ReLU(True),
+        )
+    model = model.cuda()
+    model.train()
+
+    ##########
+    def b2mb(x): return int(x/2**20)
+    class TorchTracemalloc():
+    
+        def __enter__(self):
+            self.begin = torch.cuda.memory_allocated()
+            torch.cuda.reset_max_memory_allocated() # reset the peak gauge to zero
+            return self
+    
+        def __exit__(self, *exc):
+            self.end  = torch.cuda.memory_allocated()
+            self.peak = torch.cuda.max_memory_allocated()
+            self.used   = b2mb(self.end-self.begin)
+            self.peaked = b2mb(self.peak-self.begin)
+            print(f"delta used/peak {self.used:4d}/{self.peaked:4d}")
+
+    def run(time=2):
+        print(model)
+        for i in range(time):
+            with TorchTracemalloc() as tt:
+                x = torch.rand(1024,64,56,56)
+                x = x.cuda()
+                y = model(x)
+                z = y.sum()
+                z.backward()
+
+    run()
+
+    model[0].memory_saving = True
+    model[2].memory_saving = True
+    model[4].memory_saving = True
+    model[0].fm_intervals = 257
+    model[2].fm_intervals = 257
+    model[4].fm_intervals = 257
+    run()
+
+    model[0].fm_intervals = 255
+    model[2].fm_intervals = 255
+    model[4].fm_intervals = 255
+    run()
+
+    model[0].memory_saving = False
+    model[2].memory_saving = False
+    model[4].memory_saving = False
+    model[1].memory_saving = True 
+    model[3].memory_saving = True 
+    model[5].memory_saving = True 
+    run()
+
+    model[0].memory_saving = True
+    model[2].memory_saving = True
+    model[4].memory_saving = True
+    model[0].fm_intervals = 257
+    model[2].fm_intervals = 257
+    model[4].fm_intervals = 257
+    run()
+
+    model[0].fm_intervals = 255
+    model[2].fm_intervals = 255
+    model[4].fm_intervals = 255
+    run()
+
 if __name__ == "__main__":
     #test_conv()
-    test_relu()
+    #test_relu()
+    #torch.cuda.set_per_process_memory_fraction(1.0, 0)
+    #torch.cuda.empty_cache()
+    #total_memory = torch.cuda.get_device_properties(0).total_memory
+    #print('Total', total_memory)
+    profile_conv()
 
 

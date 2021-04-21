@@ -15,6 +15,9 @@ std::tuple<at::Tensor, at::Tensor> conv2d_backward(
     int64_t groups,
     bool benchmark,
     bool deterministic,
+#if TORCH_VERSION_MAJOR >= 1 && TORCH_VERSION_MINOR >= 7
+    bool allow_tf32,
+#endif
     std::array<bool, 2> output_mask) {
 
     return at::cudnn_convolution_backward(
@@ -27,6 +30,9 @@ std::tuple<at::Tensor, at::Tensor> conv2d_backward(
         groups,
         benchmark,
         deterministic,
+#if TORCH_VERSION_MAJOR >= 1 && TORCH_VERSION_MINOR >= 7
+        allow_tf32,
+#endif
         output_mask);
 }
 
