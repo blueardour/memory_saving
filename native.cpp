@@ -18,7 +18,8 @@ std::tuple<at::Tensor, at::Tensor> conv2d_backward(
 #if TORCH_VERSION_MAJOR >= 1 && TORCH_VERSION_MINOR >= 7
     bool allow_tf32,
 #endif
-    std::array<bool, 2> output_mask) {
+    std::array<bool, 2> output_mask
+    ) {
 
     return at::cudnn_convolution_backward(
         input,

@@ -25,6 +25,7 @@ log
 *.swl
 *.swk
 *.swi
+*.so
 
 build/
 dist/
@@ -32,6 +33,7 @@ dist/
 
 # env
 .env
+env.sh
 
 # script
 convert_onnx.py
