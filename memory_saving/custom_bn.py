@@ -3,8 +3,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import native
-import packbit
+from . import native
+from . import packbit
 
 def SyncBatchNorm_forward(self, input, weight, bias, running_mean, running_var, eps, momentum, process_group, world_size):
     if not input.is_contiguous(memory_format=torch.channels_last):

@@ -5,11 +5,10 @@ import torch.nn.functional as F
 import sys
 import logging
 
-import native
-import packbit
-
-import custom_conv
-import custom_bn
+from . import native
+from . import packbit
+from . import custom_conv
+from . import custom_bn
 
 class conv2d_bn(torch.autograd.Function):
     @staticmethod
@@ -22,8 +21,9 @@ class conv2d_bn(torch.autograd.Function):
                 interval, level, non_negative_only)
 
         # bn
-        x = custom_bn.batchnorm2d.forward(ctx, x, bn_weight, bn_bias, bn_mean, bn_var, average_factor, bn_training, need_sync, process_group, world_size, bn_eps)
-        #ctx.bn_input = None
+        x = custom_bn.batchnorm2d.forward(ctx, x, bn_weight, bn_bias, bn_mean, bn_var, \
+                average_factor, bn_training, need_sync, process_group, world_size, bn_eps)
+        ctx.bn_input = None
 
         return x
 
@@ -44,7 +44,7 @@ class conv2d_bn(torch.autograd.Function):
             x = y
 
         # checkpoint
-        #ctx.bn_input = z = F.conv2d(x, weight, bias, stride, padding, dilation, groups)
+        ctx.bn_input = z = F.conv2d(x, weight, bias, stride, padding, dilation, groups)
 
         # overwrite
         ctx.conv_input = x
@@ -64,7 +64,7 @@ class conv2d_bn(torch.autograd.Function):
 
 class Conv2d(custom_conv.Conv2d):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, \
-            norm=None, memory_saving=True, args=None, logger=None):
+            norm=None, memory_saving=True, args=None, logger=None, force_fp=False):
         super(Conv2d, self).__init__(in_channels, out_channels, kernel_size, stride=stride, padding=padding, \
                 dilation=dilation, groups=groups, bias=bias, memory_saving=memory_saving, args=args, logger=logger)
 
@@ -91,7 +91,8 @@ class Conv2d(custom_conv.Conv2d):
             average_factor, training, mean, var, need_sync, process_group, world_size = custom_bn.bn_pre_forward(self.norm, x)
             y = conv2d_bn.apply(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups, \
                     self.clip_val.abs(), level, self.non_negative_only, \
-                    self.norm.weight, self.norm.bias, mean, var, average_factor, training, need_sync, process_group, world_size, self.norm.eps)
+                    self.norm.weight, self.norm.bias, mean, var, \
+                    average_factor, training, need_sync, process_group, world_size, self.norm.eps)
         else:
             x = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
             y = self.norm(x)

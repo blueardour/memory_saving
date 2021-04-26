@@ -5,8 +5,8 @@ import torch.nn.functional as F
 import sys
 import logging
 
-import native
-import packbit
+from . import native
+from . import packbit
 
 # Uniform Quantization based Convolution
 class conv2d_uniform(torch.autograd.Function):
@@ -15,7 +15,7 @@ class conv2d_uniform(torch.autograd.Function):
         # quant
         is_filtered = None
         if level < 256:
-            if isinstance(interval, torch.Tensor) and intreval.dtype != x.dtype:
+            if isinstance(interval, torch.Tensor) and interval.dtype != x.dtype:
                 interval = interval.to(dtype=x.dtype)
             if non_negative_only:
                 is_filtered = x.ge(interval.item())
@@ -86,7 +86,7 @@ class conv2d_uniform(torch.autograd.Function):
 
 class Conv2d(nn.Conv2d):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, \
-            memory_saving=True, args=None, logger=None):
+            memory_saving=True, args=None, logger=None, force_fp=False):
         super(Conv2d, self).__init__(in_channels, out_channels, kernel_size, stride=stride, padding=padding, \
                 dilation=dilation, groups=groups, bias=bias)
 
@@ -121,7 +121,7 @@ class Conv2d(nn.Conv2d):
                 self.level = int(2 ** args.fm_bit) - 1
             if hasattr(args, 'fm_level') and args.fm_level is not None and args.fm_level <= 256:
                 self.level = args.fm_level
-            if hasattr(args, 'fm_boundary'):
+            if hasattr(args, 'fm_boundary') and args.fm_boundary is not None:
                 self.clip_val.fill_(args.fm_boundary)
             if hasattr(args, 'fm_stable'):
                 self.stable = args.fm_stable
@@ -156,7 +156,7 @@ class Conv2d(nn.Conv2d):
                     max_value = max_value * self.correlate
                 self.clip_val.data = max_value + iteration * self.clip_val.data
                 self.clip_val.div_(iteration + 1)
-                if iteration == (self.fm_stable - 1):
+                if iteration == (self.stable - 1):
                     self.logger.info('update %s clip_val for index %d to %r' % (self.tag, self.index, self.clip_val.item()))
 
     def forward(self, x):
