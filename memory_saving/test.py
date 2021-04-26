@@ -20,7 +20,7 @@ def test_layer(iteration=10):
             nn.BatchNorm2d(64),
             nn.ReLU(),
             ms.Conv2d(64, 64, 3, bias=False),
-            ms.ReLU(),
+            #ms.ReLU(),
             )
     model = model.cuda()
 
