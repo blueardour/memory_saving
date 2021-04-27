@@ -64,7 +64,7 @@ class conv2d_uniform(torch.autograd.Function):
         benchmark = True
         deterministic = True
         allow_tf32 = True
-        output_mask = ctx.needs_input_grad[:2]
+        output_mask = [True, True] #ctx.needs_input_grad[:2]
         if torch.__version__ >= "1.7":
             grad_input, grad_weight = native.conv2d_backward(x, grad_output, weight, padding, stride, dilation, groups, \
                     benchmark, deterministic, allow_tf32, output_mask)
@@ -77,8 +77,11 @@ class conv2d_uniform(torch.autograd.Function):
 
         # quant
         if is_filtered is not None and interval is not None:
+            #import pdb
+            #pdb.set_trace()
+            #assert grad_input is not None, "output_mask {}".format(output_mask)
+            grad_interval = grad_input[is_filtered].sum().reshape(interval.shape)
             grad_input[is_filtered] = 0
-            grad_interval = grad_input.sum()
 
         return grad_input, grad_weight, grad_bias, None, None, None, None, \
                 grad_interval, None, None
@@ -133,16 +136,21 @@ class Conv2d(nn.Conv2d):
                 self.non_negative_only = self.non_negative_only and args.nno
             if hasattr(args, 'fm_half_range'):
                 self.non_negative_only = self.non_negative_only and args.fm_half_range
+            self.logger.info("index({})-clip_val({})-level({})-stable({})-correlate({})-non_negative_only({})".format(
+                self.index, self.clip_val.item(), self.level, self.stable, self.correlate, self.non_negative_only))
 
     def __repr__(self):
         return self.__str__()
 
     def __str__(self):
         if self.memory_saving:
-            return self.string + self.repr + "-clip_val({})-level({})-stable({})-correlate({})-non_negative_only({})".format(
+            string = self.string + self.repr + "-clip_val({})-level({})-stable({})-correlate({})-non_negative_only({})".format(
                 self.clip_val.item(), self.level, self.stable, self.correlate, self.non_negative_only)
         else:
-            return self.repr
+            string = self.repr
+        if hasattr(self, 'norm'):
+            string += "\n\t-" + str(self.norm)
+        return string
 
     def init_based_on_warmup(self, data=None):
         if not self.memory_saving and data is None:
