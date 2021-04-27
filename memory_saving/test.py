@@ -8,7 +8,13 @@ import copy
 import sys
 import pickle
 
-def test_layer(iteration=10):
+def test(iteration=10):
+    seed = 2809
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    cudnn.benchmark = True
+    torch.backends.cudnn.deterministic=True #https://github.com/pytorch/pytorch/issues/8019
+
     model = nn.Sequential(
             nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
             ms.BatchNorm2d(64),
@@ -94,19 +100,17 @@ def verbose(model, model1):
         if 'running' in k:
             print(k, v.max(), v.min())
 
-def profile_conv():
-    #print("start precent / memory: %r, %r" % GPUInfo.gpu_usage())
-    nn.Conv2d = custom_conv_bn
-    #nn.ReLU = custom_relu
+def profile():
+    torch.cuda.set_per_process_memory_fraction(0.8, 0)
+    torch.cuda.empty_cache()
+    total_memory = torch.cuda.get_device_properties(0).total_memory
+    print("total_memory {}".format(total_memory))
     model = nn.Sequential(
-            nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
-            #nn.BatchNorm2d(64),
+            ms.cc.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
             nn.ReLU(True),
-            nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
-            #nn.BatchNorm2d(64),
+            ms.cc.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
             nn.ReLU(True),
-            nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
-            #nn.BatchNorm2d(64),
+            ms.cc.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
             nn.ReLU(True),
         )
     model = model.cuda()
@@ -138,48 +142,31 @@ def profile_conv():
                 z = y.sum()
                 z.backward()
 
+    ## 1.
+    for m in model.modules():
+        if hasattr(m, 'memory_saving'):
+            m.memory_saving = False
+    print(model)
     run()
 
-    model[0].memory_saving = True
-    model[2].memory_saving = True
-    model[4].memory_saving = True
-    model[0].fm_intervals = 257
-    model[2].fm_intervals = 257
-    model[4].fm_intervals = 257
+    ## 2.
+    for m in model.modules():
+        if hasattr(m, 'memory_saving'):
+            m.memory_saving = True
+        if hasattr(m, 'level'):
+            m.level = 256
+    print(model)
     run()
 
-    model[0].fm_intervals = 255
-    model[2].fm_intervals = 255
-    model[4].fm_intervals = 255
-    run()
-
-    model[0].memory_saving = False
-    model[2].memory_saving = False
-    model[4].memory_saving = False
-    model[1].memory_saving = True 
-    model[3].memory_saving = True 
-    model[5].memory_saving = True 
-    run()
-
-    model[0].memory_saving = True
-    model[2].memory_saving = True
-    model[4].memory_saving = True
-    model[0].fm_intervals = 257
-    model[2].fm_intervals = 257
-    model[4].fm_intervals = 257
-    run()
-
-    model[0].fm_intervals = 255
-    model[2].fm_intervals = 255
-    model[4].fm_intervals = 255
+    ## 3.
+    for m in model.modules():
+        if hasattr(m, 'memory_saving'):
+            m.memory_saving = True
+        if hasattr(m, 'level'):
+            m.level = 255
     run()
 
 if __name__ == "__main__":
-    seed = 2809
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    cudnn.benchmark = True
-    torch.backends.cudnn.deterministic=True #https://github.com/pytorch/pytorch/issues/8019
-    test_layer()
-    #profile_conv()
+    #test()
+    profile()
 

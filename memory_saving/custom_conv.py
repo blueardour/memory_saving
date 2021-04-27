@@ -12,6 +12,7 @@ from . import packbit
 class conv2d_uniform(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, weight, bias, stride, padding, dilation, groups, interval=None, level=255, non_negative_only=True):
+        #with torch.no_grad():
         # quant
         is_filtered = None
         if level < 256:
@@ -31,7 +32,7 @@ class conv2d_uniform(torch.autograd.Function):
             else:
                 raise NotImplementedError
         else:
-            y = x
+            y = x + 1
             interval=None
 
         # conv
@@ -58,7 +59,7 @@ class conv2d_uniform(torch.autograd.Function):
             x = y.to(dtype=interval.dtype)
             x = x.mul(interval / level)
         else:
-            x = y
+            x = y - 1
 
         # conv
         benchmark = True
@@ -77,11 +78,11 @@ class conv2d_uniform(torch.autograd.Function):
 
         # quant
         if is_filtered is not None and interval is not None:
-            #import pdb
-            #pdb.set_trace()
-            #assert grad_input is not None, "output_mask {}".format(output_mask)
-            grad_interval = grad_input[is_filtered].sum().reshape(interval.shape)
-            grad_input[is_filtered] = 0
+            grad_output = torch.where(is_filtered, torch.zeros_like(grad_input), grad_input)
+            grad_interval = (grad_input - grad_output).sum().reshape(interval.shape)
+            grad_input = grad_output
+            #grad_interval = grad_input[is_filtered].sum().reshape(interval.shape)
+            #grad_input[is_filtered] = 0
 
         return grad_input, grad_weight, grad_bias, None, None, None, None, \
                 grad_interval, None, None
