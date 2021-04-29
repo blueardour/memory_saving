@@ -13,6 +13,7 @@ class conv2d_uniform(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, weight, bias, stride, padding, dilation, groups, interval=None, level=255, non_negative_only=True):
         #with torch.no_grad():
+        #x = x.detach()
         # quant
         is_filtered = None
         if level < 256:
@@ -32,13 +33,14 @@ class conv2d_uniform(torch.autograd.Function):
             else:
                 raise NotImplementedError
         else:
-            y = x + 1
+            y = x
             interval=None
 
         # conv
         x = F.conv2d(x, weight, bias, stride, padding, dilation, groups)
 
         # save tensor
+        print("saved_tensor id in custom_conv-> y: {}, is_filtered: {}\n".format(id(y), id(is_filtered)))
         ctx.conv_input = y
         ctx.conv_weight = (weight, bias, interval, is_filtered)
         ctx.hyperparameters_conv = (stride, padding, dilation, groups)
@@ -59,7 +61,7 @@ class conv2d_uniform(torch.autograd.Function):
             x = y.to(dtype=interval.dtype)
             x = x.mul(interval / level)
         else:
-            x = y - 1
+            x = y
 
         # conv
         benchmark = True
