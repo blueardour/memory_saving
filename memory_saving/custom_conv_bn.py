@@ -53,7 +53,6 @@ class conv2d_bn(torch.autograd.Function):
 
         # bn
         grad_output, grad_bn_weight, grad_bn_bias, _, _, _, _, _, _, _, _ = custom_bn.batchnorm2d.backward(ctx, grad_output)
-        ctx.bn_input = z = None
 
         # conv
         grad_input, grad_weight, grad_bias, _, _, _, _, grad_interval, _, _ = custom_conv.conv2d_uniform.backward(ctx, grad_output)

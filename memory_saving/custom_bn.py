@@ -148,7 +148,6 @@ class batchnorm2d(torch.autograd.Function):
             output, save_mean, save_var, reverse = native.batch_norm_forward(input, weight, bias, mean, var, training, average_factor, eps)
             ctx.bn_weight = (weight, mean, var, save_mean, save_var, reverse)
             ctx.bn_input = input
-            #ctx.save_for_backward(input, weight, mean, var, save_mean, save_var, reverse)
         ctx.need_sync = need_sync
         return output
 
@@ -161,9 +160,11 @@ class batchnorm2d(torch.autograd.Function):
         else:
             input = ctx.bn_input
             weight, running_mean, running_var, save_mean, save_var, reverse = ctx.bn_weight
-            #input, weight, running_mean, running_var, save_mean, save_var, reverse = ctx.saved_tensors
             grad_input, grad_weight, grad_bias = native.batch_norm_backward(input, grad_output, weight, running_mean, running_var, \
                     save_mean, save_var, 0, reverse)
+            ctx.bn_input = None
+            ctx.bn_weight = None
+        ctx.need_sync = None
 
         #if not ctx.needs_input_grad[0]:
         #    grad_input = None

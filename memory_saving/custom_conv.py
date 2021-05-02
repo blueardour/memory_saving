@@ -12,8 +12,6 @@ from . import packbit
 class conv2d_uniform(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, weight, bias, stride, padding, dilation, groups, interval=None, level=255, non_negative_only=True):
-        #with torch.no_grad():
-        #x = x.detach()
         # quant
         is_filtered = None
         if level < 256:
@@ -86,6 +84,10 @@ class conv2d_uniform(torch.autograd.Function):
             #grad_interval = grad_input[is_filtered].sum().reshape(interval.shape)
             #grad_input[is_filtered] = 0
 
+        ctx.conv_input = x = y = None
+        ctx.conv_weight = None
+        ctx.hyperparameters_conv = None
+        ctx.hyperparameters_quant= None
         return grad_input, grad_weight, grad_bias, None, None, None, None, \
                 grad_interval, None, None
 

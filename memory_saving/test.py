@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
+import torch.autograd.profiler as profiler
 
 import memory_saving as ms
 
@@ -139,6 +140,7 @@ def profile():
     def tensor_id(init=False, buffers=None):
         bl = buffer_list if buffers is None else buffers
         torch.cuda.empty_cache()
+        gc.collect()
         objs = gc.get_objects()
         def lookup(obj):
             if isinstance(obj, (tuple, list)):
@@ -151,7 +153,7 @@ def profile():
                 else:
                     if id(obj) not in bl:
                         print('+ obj', id(obj), obj.element_size(), obj.nelement())
-                        bl[id(obj)] = obj.element_size(), obj.nelement()
+                        #bl[id(obj)] = obj.element_size(), obj.nelement()
         lookup(objs)
         print('')
 
@@ -170,30 +172,38 @@ def profile():
         mod.register_forward_hook(_generate_mem_hook('fwd'))
         mod.register_backward_hook(_generate_mem_hook('bwd'))
 
-    def run(time=2):
+    def run(time=3, debug=[1]):
         print(model)
         torch.cuda.empty_cache()
         for i in range(time):
             with TorchTracemalloc() as tt:
-                if i > 0:
+                if i in debug:
                     tensor_id()  # only parameters 
                 x = torch.rand(512,64,56,56)
                 x = x.cuda()
-                if i > 0:
+                if i in debug:
                     print("x id {}\n".format(id(x)))
                     tensor_id() # x is obsersed
-                y = model(x)
-                if i > 0:
-                    print("y id {}\n".format(id(y)))
-                    tensor_id() # x, y are observed. 
+
+                if i in debug:
+                    with profiler.profile(profile_memory=True, record_shapes=True) as prof:
+                        with profiler.record_function("model_inference"):
+                            y = model(x)
+                else:
+                    y = model(x)
+
                 z = y.sum()
-                if i > 0:
-                    print("z id {}\n".format(id(z)))
+                if i in debug:
+                    print("y id {}, z id {}\n".format(id(y), id(z)))
                     tensor_id() # x, y, z are observed
+
                 z.backward()
-                if i > 0:
+                if i in debug:
                     tensor_id() # x, y, z are observed
                 del x, y, z
+
+            if i in debug:
+                print(prof.key_averages().table())
 
     ###########
 
@@ -206,7 +216,6 @@ def profile():
     for m in model.modules():
         if hasattr(m, 'memory_saving'):
             m.memory_saving = False
-    print(model)
     run()
 
     #return
@@ -217,10 +226,9 @@ def profile():
             m.memory_saving = True
         if hasattr(m, 'level'):
             m.level = 256
-    print(model)
     run()
 
-    return
+    #return
 
     ## 3. quant saved tensor
     for m in model.modules():
