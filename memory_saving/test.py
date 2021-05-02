@@ -112,11 +112,11 @@ def profile():
     print("total_memory {} GB".format(total_memory / 1024 / 1024))
     model = nn.Sequential(
             ms.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
-            #nn.ReLU(True),
+            nn.ReLU(True),
             ms.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
-            #nn.ReLU(True),
+            nn.ReLU(True),
             ms.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
-            #nn.ReLU(True),
+            nn.ReLU(True),
         )
     model = model.cuda()
     model.train()
@@ -185,7 +185,7 @@ def profile():
                     print("x id {}\n".format(id(x)))
                     tensor_id() # x is obsersed
 
-                if i in debug:
+                if i in debug and torch.__version__ >= "1.6":
                     with profiler.profile(profile_memory=True, record_shapes=True) as prof:
                         with profiler.record_function("model_inference"):
                             y = model(x)
@@ -202,7 +202,7 @@ def profile():
                     tensor_id() # x, y, z are observed
                 del x, y, z
 
-            if i in debug:
+            if i in debug and torch.__version__ >= "1.6":
                 print(prof.key_averages().table())
 
     ###########
