@@ -11,7 +11,7 @@ from . import packbit
 # Uniform Quantization based Convolution
 class conv2d_uniform(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, weight, bias, stride, padding, dilation, groups, interval=None, level=255, non_negative_only=True):
+    def forward(ctx, x, weight, bias, stride, padding, dilation, groups, interval=None, level=255, non_negative_only=True, training=True):
         # quant
         is_filtered = None
         if level < 256:
@@ -23,11 +23,15 @@ class conv2d_uniform(torch.autograd.Function):
                 scale = interval / level
                 x.div_(scale)
                 y = torch.round(x)
-                x = x.mul_(scale)
-                if level == 255:
-                    y = y.to(dtype=torch.uint8)
+                x = y.mul(scale)
+                if training:
+                    if level == 255:
+                        y = y.to(dtype=torch.uint8)
+                    else:
+                        raise NotImplementedError
                 else:
-                    raise NotImplementedError
+                    y = None
+                    is_filtered = None
             else:
                 raise NotImplementedError
         else:
@@ -38,11 +42,12 @@ class conv2d_uniform(torch.autograd.Function):
         x = F.conv2d(x, weight, bias, stride, padding, dilation, groups)
 
         # save tensor
-        print("saved_tensor id in custom_conv-> y: {}, is_filtered: {}\n".format(id(y), id(is_filtered)))
-        ctx.conv_input = y
-        ctx.conv_weight = (weight, bias, interval, is_filtered)
-        ctx.hyperparameters_conv = (stride, padding, dilation, groups)
-        ctx.hyperparameters_quant= (level, non_negative_only)
+        if training: # or True:
+            print("saved_tensor id in custom_conv-> y: {} with {}, is_filtered: {}\n".format(id(y), y.shape, id(is_filtered) if is_filtered is not None else None))
+            ctx.conv_input = y
+            ctx.conv_weight = (weight, bias, interval, is_filtered)
+            ctx.hyperparameters_conv = (stride, padding, dilation, groups)
+            ctx.hyperparameters_quant= (level, non_negative_only)
         return x
 
     @staticmethod
@@ -57,7 +62,7 @@ class conv2d_uniform(torch.autograd.Function):
 
         if level < 256:
             x = y.to(dtype=interval.dtype)
-            x = x.mul(interval / level)
+            x = x.mul_(interval / level)
         else:
             x = y
 
@@ -77,19 +82,16 @@ class conv2d_uniform(torch.autograd.Function):
             grad_bias = grad_output.sum((0,2,3)).squeeze(0)
 
         # quant
-        if is_filtered is not None and interval is not None:
-            grad_output = torch.where(is_filtered, torch.zeros_like(grad_input), grad_input)
-            grad_interval = (grad_input - grad_output).sum().reshape(interval.shape)
-            grad_input = grad_output
-            #grad_interval = grad_input[is_filtered].sum().reshape(interval.shape)
-            #grad_input[is_filtered] = 0
+        if is_filtered is not None and interval is not None: # and False:
+            grad_interval = grad_input.masked_select(is_filtered).sum().reshape(interval.shape)
+            grad_input.masked_fill_(is_filtered, 0.0)
 
         ctx.conv_input = x = y = None
         ctx.conv_weight = None
         ctx.hyperparameters_conv = None
         ctx.hyperparameters_quant= None
         return grad_input, grad_weight, grad_bias, None, None, None, None, \
-                grad_interval, None, None
+                grad_interval, None, None, None
 
 
 class Conv2d(nn.Conv2d):
@@ -179,7 +181,7 @@ class Conv2d(nn.Conv2d):
                 y = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
             else:
                 y = conv2d_uniform.apply(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups, \
-                        self.clip_val.abs(), self.level, self.non_negative_only)
+                        self.clip_val.abs(), self.level, self.non_negative_only, self.training)
         else:
             y = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
         self.iteration.add_(1)
