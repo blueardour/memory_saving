@@ -11,25 +11,27 @@ import sys
 import gc
 import pickle
 
-def test(iteration=10):
+def test(iteration=2, inplace=False):
     seed = 2809
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     cudnn.benchmark = True
     torch.backends.cudnn.deterministic=True #https://github.com/pytorch/pytorch/issues/8019
 
+    relu = nn.ReLU
     model = nn.Sequential(
             nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(64), #ms.BatchNorm2d(64),
+            relu(inplace=inplace),
+            nn.Conv2d(64, 64, 3, bias=False), #ms.Conv2d(64, 64, 3, bias=False),
+            relu(inplace=inplace),
+            nn.Conv2d(64, 64, 3, bias=False), #ms.cc.Conv2d(64, 64, 3, bias=False),
+            relu(inplace=inplace),
+            nn.Conv2d(64, 64, 3, bias=False), #ms.cc.Conv2d(64, 64, 3, bias=False),
             ms.BatchNorm2d(64),
-            ms.Conv2d(64, 64, 3, bias=False),
-            nn.ReLU(),
-            ms.cc.Conv2d(64, 64, 3, bias=False),
-            nn.ReLU(),
-            ms.cc.Conv2d(64, 64, 3, bias=False),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            ms.Conv2d(64, 64, 3, bias=False),
-            #ms.ReLU(),
+            relu(inplace=inplace),
+            nn.Conv2d(64, 64, 3, bias=False), #ms.Conv2d(64, 64, 3, bias=False),
+            relu(inplace=inplace),
             )
     model = model.cuda()
 
@@ -39,21 +41,6 @@ def test(iteration=10):
 
     model1 = copy.deepcopy(model)
     #model1 = pickle.loads(pickle.dumps(model))
-
-    for m in model.modules():
-        if hasattr(m, 'memory_saving'):
-            m.memory_saving = False
-
-    for m in model1.modules():
-        if hasattr(m, 'memory_saving'):
-            m.memory_saving = True
-        if hasattr(m, 'level'):
-            m.level = 256
-
-    model.train()
-    model1.train()
-    print(model)
-    print(model1)
 
     def verbose(model, model1):
         for k, v in model.named_parameters():
@@ -77,31 +64,61 @@ def test(iteration=10):
             if 'running' in k:
                 print(k, v.max(), v.min())
 
-    verbose(model, model1)
+    def run():
+        model.train()
+        model1.train()
+        print(model)
+        print(model1)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01) #, momentum=0.9)
-    optimizer.zero_grad()
-    optimizer1 = torch.optim.Adam(model1.parameters(), lr=0.01) #, momentum=0.9)
-    optimizer1.zero_grad()
-    for i in range(iteration):
-        print("index: ", i)
-        x = torch.rand(512,64,56,56)
-        x = x - 0.5
-        x = x.cuda()
-        x1 = x.clone()
+        verbose(model, model1)
 
-        y = model(x)
-        z = y.sum()
-        z.backward()
-        optimizer.step()
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.01) #, momentum=0.9)
+        optimizer1 = torch.optim.Adam(model1.parameters(), lr=0.01) #, momentum=0.9)
+        for i in range(iteration):
+            print("index: ", i)
+            x = torch.rand(512,64,56,56)
+            x = x - 0.5
+            x = x.cuda()
+            x1 = x.clone()
+            #print(x.requires_grad, x1.requires_grad)
 
-        y1 = model1(x1)
-        z1 = y1.sum()
-        z1.backward()
-        optimizer1.step()
+            optimizer.zero_grad()
+            optimizer1.zero_grad()
 
-        print('z diff: ', (z1 - z).item(), ', z ', z.item())
-    verbose(model, model1)
+            y = model(x)
+            z = y.sum()
+            z.backward()
+            optimizer.step()
+
+            y1 = model1(x1)
+            z1 = y1.sum()
+            z1.backward()
+            optimizer1.step()
+
+            print('z diff: ', (z1 - z).item(), ', z ', z.item())
+            x = x1 = y = z = y1 = z1 = None
+        verbose(model, model1)
+
+    for m in model.modules():
+        if hasattr(m, 'memory_saving'):
+            m.memory_saving = False
+
+    for m in model1.modules():
+        if hasattr(m, 'memory_saving'):
+            m.memory_saving = True
+        if hasattr(m, 'level'):
+            m.level = 256
+    run()
+
+    #for m in model.modules():
+    #    if hasattr(m, 'inplace') and isinstance(m, nn.ReLU):
+    #        m.inplace = True
+
+    #for m in model1.modules():
+    #    if hasattr(m, 'inplace') and isinstance(m, nn.ReLU):
+    #        m.inplace = True
+
+    #run()
 
 def profile():
     frac = 1.0
@@ -241,6 +258,6 @@ def profile():
 if __name__ == "__main__":
     torch.backends.cudnn.benchmark = True
     torch.backends.cudnn.enabled = False
-    #test()
-    profile()
+    test(inplace=True)
+    #profile()
 
