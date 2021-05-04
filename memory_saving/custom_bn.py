@@ -146,9 +146,11 @@ class batchnorm2d(torch.autograd.Function):
             output = SyncBatchNorm_forward(ctx, input, bn_weight, bn_bias, bn_mean, bn_var, bn_eps, average_factor, process_group, world_size)
         else:
             output, save_mean, save_var, reverse = native.batch_norm_forward(input, weight, bias, mean, var, training, average_factor, eps)
-            ctx.bn_weight = (weight, mean, var, save_mean, save_var, reverse)
-            ctx.bn_input = input
-        ctx.need_sync = need_sync
+            if training:
+                ctx.bn_weight = (weight, mean, var, save_mean, save_var, reverse)
+                ctx.bn_input = input
+        if training:
+            ctx.need_sync = need_sync
         return output
 
 
@@ -195,7 +197,8 @@ class BatchNorm2d(nn.BatchNorm2d):
     def forward(self, x):
         if self.memory_saving:
             average_factor, training, mean, var, need_sync, process_group, world_size = bn_pre_forward(self, x)
-            y = batchnorm2d.apply(x, self.weight, self.bias, mean, var, average_factor, training, need_sync, process_group, world_size, self.eps)
+            y = batchnorm2d.apply(x, self.weight, self.bias, mean, var, \
+                average_factor, training, need_sync, process_group, world_size, self.eps)
         else:
             y = super().forward(x)
         return y
