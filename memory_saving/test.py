@@ -11,28 +11,42 @@ import sys
 import gc
 import pickle
 
-def test(iteration=2, inplace=False):
+def test(iteration=10, inplace=False):
     seed = 2809
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    cudnn.benchmark = True
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.enabled = True
     torch.backends.cudnn.deterministic=True #https://github.com/pytorch/pytorch/issues/8019
 
-    relu = nn.ReLU
+    relu = ms.ReLU
+
+    class Model(nn.Module):
+        def __init__(self, inplace=False):
+            super(Model, self).__init__()
+            self.conv = nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False)
+            self.relu = relu(inplace=inplace)
+
+        def forward(self, x):
+            x = self.conv(x)
+            x = self.relu(x)
+            return x
+
     model = nn.Sequential(
             nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(64), #ms.BatchNorm2d(64),
-            relu(inplace=inplace),
-            nn.Conv2d(64, 64, 3, bias=False), #ms.Conv2d(64, 64, 3, bias=False),
-            relu(inplace=inplace),
-            nn.Conv2d(64, 64, 3, bias=False), #ms.cc.Conv2d(64, 64, 3, bias=False),
-            relu(inplace=inplace),
-            nn.Conv2d(64, 64, 3, bias=False), #ms.cc.Conv2d(64, 64, 3, bias=False),
-            ms.BatchNorm2d(64),
-            relu(inplace=inplace),
-            nn.Conv2d(64, 64, 3, bias=False), #ms.Conv2d(64, 64, 3, bias=False),
+            #ms.BatchNorm2d(64), #ms.BatchNorm2d(64),
+            #relu(inplace=inplace),
+            #ms.Conv2d(64, 64, 3, bias=False), #ms.Conv2d(64, 64, 3, bias=False),
+            #nn.ReLU(inplace=inplace),
+            #ms.cc.Conv2d(64, 64, 3, bias=False), #ms.cc.Conv2d(64, 64, 3, bias=False),
+            #relu(inplace=inplace),
+            #ms.cc.Conv2d(64, 64, 3, bias=False), #ms.cc.Conv2d(64, 64, 3, bias=False),
+            #ms.BatchNorm2d(64),
+            #relu(inplace=inplace),
+            #ms.Conv2d(64, 64, 3, bias=False), #ms.Conv2d(64, 64, 3, bias=False),
             relu(inplace=inplace),
             )
+    #model = Model(inplace)
     model = model.cuda()
 
     for m in model.modules():
@@ -76,7 +90,7 @@ def test(iteration=2, inplace=False):
         optimizer1 = torch.optim.Adam(model1.parameters(), lr=0.01) #, momentum=0.9)
         for i in range(iteration):
             print("index: ", i)
-            x = torch.rand(512,64,56,56)
+            x = torch.rand(256,64,56,56)
             x = x - 0.5
             x = x.cuda()
             x1 = x.clone()
@@ -121,6 +135,12 @@ def test(iteration=2, inplace=False):
     #run()
 
 def profile():
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.enabled = True
+    torch.backends.cudnn.deterministic=True #https://github.com/pytorch/pytorch/issues/8019
+
     frac = 1.0
     if torch.__version__ >= "1.8":
         torch.cuda.set_per_process_memory_fraction(frac, 0)
@@ -129,11 +149,11 @@ def profile():
     print("total_memory {} GB".format(total_memory / 1024 / 1024))
     model = nn.Sequential(
             ms.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
-            nn.ReLU(True),
+            ms.ReLU(True),
             ms.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
-            nn.ReLU(True),
+            ms.ReLU(True),
             ms.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
-            nn.ReLU(True),
+            ms.ReLU(True),
         )
     model = model.cuda()
     model.train()
@@ -256,8 +276,6 @@ def profile():
     run()
 
 if __name__ == "__main__":
-    torch.backends.cudnn.benchmark = True
-    torch.backends.cudnn.enabled = False
-    test(inplace=True)
-    #profile()
+    #test(inplace=True)
+    profile()
 

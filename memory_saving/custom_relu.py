@@ -12,11 +12,11 @@ class relu(torch.autograd.Function):
         if inplace:
             output = x.clamp_(min=0)
         else:
-            y = x < 0
-            #y = packbit.packbits_padded(y, dim=dim) 
-            ctx.save_for_backward(y)
-            ctx.dim = dim
             output = x.clamp(min=0)
+        y = x < 0
+        #y = packbit.packbits_padded(y, dim=dim) 
+        ctx.save_for_backward(y)
+        ctx.dim = dim
         return output
 
     @staticmethod
@@ -26,8 +26,9 @@ class relu(torch.autograd.Function):
         else:
             y, = ctx.saved_tensors
             #y = packbit.unpackbits_padded(z, dim=ctx.dim)
-            grad_input = grad_output.clone()
-            grad_input[y] = 0
+            #grad_input = grad_output.clone()
+            #grad_input[y] = 0
+            grad_input = grad_output.masked_fill(y, 0)
             return grad_input, None, None
 
 class ReLU(nn.ReLU):
