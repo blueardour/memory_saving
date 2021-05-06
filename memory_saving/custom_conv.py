@@ -55,28 +55,35 @@ class conv2d_uniform(torch.autograd.Function):
         return x
 
     @staticmethod
-    def backward(ctx, grad_output):
-        grad_input, grad_weight, grad_bias, grad_interval = None, None, None, None
-
+    def restore_conv_input(ctx):
         # restore
         y = ctx.conv_input
         weight, bias, interval, is_filtered = ctx.conv_weight
-        stride, padding, dilation, groups = ctx.hyperparameters_conv
         level, non_negative_only = ctx.hyperparameters_quant
 
-        # unpack
-        if is_filtered is not None:
-            is_filtered = packbit.unpackbits_padded(is_filtered, dim=1).to(dtype=torch.bool)
-
-        if level < 256 and level > 15:
+        if level > 255:
+            x = y
+        elif level < 256 and level > 15:
             x = y.to(dtype=interval.dtype)
             x = x.mul_(interval / level)
         elif level < 16 and level > 3:
             x = packbit.unpackbits_padded(y, dim=1, mask=0b1111).to(dtype=interval.dtype)
             x = x.mul_(interval / level)
         else:
-            x = y
-        ctx.conv_input = y = None
+            raise NotImplementedError("level: {}".format(level))
+
+        ctx.conv_input = None
+        return x
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        grad_input, grad_weight, grad_bias, grad_interval = None, None, None, None
+
+        weight, bias, interval, is_filtered = ctx.conv_weight
+        stride, padding, dilation, groups = ctx.hyperparameters_conv
+        level, non_negative_only = ctx.hyperparameters_quant
+
+        x = conv2d_uniform.restore_conv_input(ctx)
 
         # conv
         benchmark = True
@@ -89,16 +96,19 @@ class conv2d_uniform(torch.autograd.Function):
         else:
             grad_input, grad_weight = native.conv2d_backward(x, grad_output, weight, padding, stride, dilation, groups, \
                     benchmark, deterministic, output_mask)
+        x = None
 
         if bias is not None and ctx.needs_input_grad[2]:
             grad_bias = grad_output.sum((0,2,3)).squeeze(0)
 
         # quant
         if is_filtered is not None and interval is not None: # and False:
+            # unpack
+            is_filtered = packbit.unpackbits_padded(is_filtered, dim=1).to(dtype=torch.bool)
             grad_interval = grad_input.masked_select(is_filtered).sum().reshape(interval.shape)
             grad_input.masked_fill_(is_filtered, 0.0)
 
-        ctx.conv_input = x = y = None
+        ctx.conv_input = None
         ctx.conv_weight = None
         ctx.hyperparameters_conv = None
         ctx.hyperparameters_quant= None

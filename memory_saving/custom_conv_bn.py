@@ -28,24 +28,18 @@ class conv2d_bn(torch.autograd.Function):
         grad_input, grad_weight, grad_bias, grad_bn_weight, grad_bn_bias, grad_interval = None, None, None, None, None, None
 
         # restore
-        y = ctx.conv_input
         weight, bias, interval, is_filtered = ctx.conv_weight
         stride, padding, dilation, groups = ctx.hyperparameters_conv
         level, non_negative_only = ctx.hyperparameters_quant
-        
-        if level < 256:
-            x = y.to(dtype=interval.dtype)
-            x = x.mul_(interval / level)
-        else:
-            x = y
+
+        # restore and overwrite
+        x = custom_conv.conv2d_uniform.restore_conv_input(ctx)
+        ctx.conv_input = x
+        ctx.hyperparameters_quant= 256, non_negative_only
 
         # checkpoint
         ctx.bn_input = z = F.conv2d(x, weight, bias, stride, padding, dilation, groups)
-
-        # overwrite
-        ctx.conv_input = x
-        ctx.level = 256
-        y = None
+        x = None
 
         # bn
         grad_output, grad_bn_weight, grad_bn_bias, _, _, _, _, _, _, _, _ = custom_bn.batchnorm2d.backward(ctx, grad_output)

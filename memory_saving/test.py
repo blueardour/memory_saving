@@ -263,7 +263,7 @@ def profile():
             with TorchTracemalloc(i) as tt:
                 if i in debug:
                     tensor_id()  # only parameters 
-                x = torch.rand(128,64,56,56)
+                x = torch.rand(256,64,56,56)
                 x = x.cuda()
                 if i in debug:
                     print("x id {}\n".format(id(x)))
@@ -324,6 +324,14 @@ def profile():
             m.level = 255
     run()
 
+    ## 4. quant saved tensor
+    for m in model.modules():
+        if hasattr(m, 'memory_saving'):
+            m.memory_saving = True
+        if hasattr(m, 'level'):
+            m.level = 15
+    run()
+
     ### 1. original pytorch module
     #for m in model.modules():
     #    if hasattr(m, 'memory_saving'):
@@ -351,9 +359,9 @@ def profile():
     #run()
 
 if __name__ == "__main__":
-    test(inplace=True)
-    test(inplace=False)
-    #profile()
     #demo()
+    test(inplace=True)
+    #test(inplace=False)
+    profile()
 
 
