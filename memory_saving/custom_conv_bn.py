@@ -53,7 +53,7 @@ class conv2d_bn(torch.autograd.Function):
 
 class Conv2d(custom_conv.Conv2d):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, \
-            norm=None, memory_saving=True, args=None, logger=None, force_fp=False):
+            norm=None, memory_saving=False, args=None, logger=None, force_fp=False):
         super(Conv2d, self).__init__(in_channels, out_channels, kernel_size, stride=stride, padding=padding, \
                 dilation=dilation, groups=groups, bias=bias, memory_saving=memory_saving, args=args, logger=logger)
 
