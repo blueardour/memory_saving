@@ -2,11 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import sys
-import logging
 
-from . import native
-from . import packbit
 from . import custom_conv
 from . import custom_bn
 
@@ -71,15 +67,20 @@ class Conv2d(custom_conv.Conv2d):
 
         # norm
         self.norm = norm
-        if self.norm is None and args is not None and torch.cuda.device_count() > 1:
-            self.norm = nn.SyncBatchNorm(out_channels)
+        if self.norm is None:
+            if torch.cuda.device_count() > 1:
+                self.norm = nn.SyncBatchNorm(out_channels)
+            else:
+                self.norm = nn.BatchNorm2d(out_channels)
         else:
-            self.norm = nn.BatchNorm2d(out_channels)
+            self.register_norm(norm)
 
     def register_norm(self, norm=None):
         if isinstance(norm, (nn.BatchNorm2d, nn.SyncBatchNorm)):
             self.norm = norm
-            self.logger.info("register norm layer in ms.Conv2d")
+            self.logger.info("register existing norm layer in ms.Conv2d")
+        else:
+            raise NotImplementedError
 
     def forward(self, x):
         if self.memory_saving:

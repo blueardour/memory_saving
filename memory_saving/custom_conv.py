@@ -25,8 +25,12 @@ class conv2d_uniform(torch.autograd.Function):
                 y = torch.round(x)
                 x = y.mul(scale)
                 if training:
-                    if level == 255:
+                    # pack
+                    is_filtered = packbit.packbits_padded(is_filtered, dim=1)
+                    if level < 256 and level > 15:
                         y = y.to(dtype=torch.uint8)
+                    elif level < 16 and level > 3:
+                        y = packbit.packbits_padded(y, dim=1, mask=0b1111)
                     else:
                         raise NotImplementedError
                 else:
@@ -36,14 +40,14 @@ class conv2d_uniform(torch.autograd.Function):
                 raise NotImplementedError
         else:
             y = x
-            interval=None
+            interval = None
 
         # conv
         x = F.conv2d(x, weight, bias, stride, padding, dilation, groups)
 
         # save tensor
         if training: # or True:
-            print("saved_tensor id in custom_conv-> y: {} with {}, is_filtered: {}\n".format(id(y), y.shape, id(is_filtered) if is_filtered is not None else None))
+            #print("saved_tensor id in custom_conv-> y: {} with {}, is_filtered: {}\n".format(id(y), y.shape, id(is_filtered) if is_filtered is not None else None))
             ctx.conv_input = y
             ctx.conv_weight = (weight, bias, interval, is_filtered)
             ctx.hyperparameters_conv = (stride, padding, dilation, groups)
@@ -60,11 +64,19 @@ class conv2d_uniform(torch.autograd.Function):
         stride, padding, dilation, groups = ctx.hyperparameters_conv
         level, non_negative_only = ctx.hyperparameters_quant
 
-        if level < 256:
+        # unpack
+        if is_filtered is not None:
+            is_filtered = packbit.unpackbits_padded(is_filtered, dim=1).to(dtype=torch.bool)
+
+        if level < 256 and level > 15:
             x = y.to(dtype=interval.dtype)
+            x = x.mul_(interval / level)
+        elif level < 16 and level > 3:
+            x = packbit.unpackbits_padded(y, dim=1, mask=0b1111).to(dtype=interval.dtype)
             x = x.mul_(interval / level)
         else:
             x = y
+        ctx.conv_input = y = None
 
         # conv
         benchmark = True

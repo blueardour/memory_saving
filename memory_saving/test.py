@@ -10,6 +10,37 @@ import copy
 import sys
 import gc
 import pickle
+import pdb
+
+def demo():
+    seed = 2809
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.enabled = True
+    torch.backends.cudnn.deterministic=True #https://github.com/pytorch/pytorch/issues/8019
+
+    class Model(nn.Module):
+        def __init__(self, inplace=False):
+            super(Model, self).__init__()
+            self.conv = nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False)
+            self.relu = ms.ReLU(inplace=inplace)
+
+        def forward(self, x):
+            x = self.conv(x)
+            x = self.relu(x)
+            return x
+
+    model = Model()
+
+    x = torch.rand(1, 64, 5, 5)
+    x = x - 0.5
+
+    y = model(x)
+    z = y.sum()
+    #z.backward()
+
+    pdb.set_trace()
 
 def test(iteration=10, inplace=False):
     seed = 2809
@@ -34,17 +65,16 @@ def test(iteration=10, inplace=False):
 
     model = nn.Sequential(
             nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
-            #ms.BatchNorm2d(64), #ms.BatchNorm2d(64),
-            #relu(inplace=inplace),
-            #ms.Conv2d(64, 64, 3, bias=False), #ms.Conv2d(64, 64, 3, bias=False),
-            #nn.ReLU(inplace=inplace),
-            #ms.cc.Conv2d(64, 64, 3, bias=False), #ms.cc.Conv2d(64, 64, 3, bias=False),
-            #relu(inplace=inplace),
-            #ms.cc.Conv2d(64, 64, 3, bias=False), #ms.cc.Conv2d(64, 64, 3, bias=False),
-            #ms.BatchNorm2d(64),
-            #relu(inplace=inplace),
-            #ms.Conv2d(64, 64, 3, bias=False), #ms.Conv2d(64, 64, 3, bias=False),
-            relu(inplace=inplace),
+            ms.BatchNorm2d(64),
+            ms.Conv2d(64, 64, 3, bias=False),
+            nn.ReLU(inplace),
+            ms.cc.Conv2d(64, 64, 3, bias=False),
+            nn.ReLU(inplace),
+            ms.cc.Conv2d(64, 64, 3, bias=False),
+            nn.BatchNorm2d(64),
+            ms.ReLU(inplace),
+            ms.Conv2d(64, 64, 3, bias=False),
+            ms.ReLU(inplace),
             )
     #model = Model(inplace)
     model = model.cuda()
@@ -55,6 +85,21 @@ def test(iteration=10, inplace=False):
 
     model1 = copy.deepcopy(model)
     #model1 = pickle.loads(pickle.dumps(model))
+
+    for m in model.modules():
+        if hasattr(m, 'memory_saving'):
+            m.memory_saving = False
+
+    for m in model1.modules():
+        if hasattr(m, 'memory_saving'):
+            m.memory_saving = True
+        if hasattr(m, 'level'):
+            m.level = 256
+
+    model.train()
+    model1.train()
+    print(model)
+    print(model1)
 
     def verbose(model, model1):
         for k, v in model.named_parameters():
@@ -78,63 +123,34 @@ def test(iteration=10, inplace=False):
             if 'running' in k:
                 print(k, v.max(), v.min())
 
-    def run():
-        model.train()
-        model1.train()
-        print(model)
-        print(model1)
+    verbose(model, model1)
 
-        verbose(model, model1)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01) #, momentum=0.9)
+    optimizer.zero_grad()
+    optimizer1 = torch.optim.Adam(model1.parameters(), lr=0.01) #, momentum=0.9)
+    optimizer1.zero_grad()
+    for i in range(iteration):
+        print("index: ", i)
+        x = torch.rand(512,64,56,56)
+        x = x - 0.5
+        x = x.cuda()
+        x1 = x.clone()
 
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.01) #, momentum=0.9)
-        optimizer1 = torch.optim.Adam(model1.parameters(), lr=0.01) #, momentum=0.9)
-        for i in range(iteration):
-            print("index: ", i)
-            x = torch.rand(256,64,56,56)
-            x = x - 0.5
-            x = x.cuda()
-            x1 = x.clone()
-            #print(x.requires_grad, x1.requires_grad)
+        y = model(x)
+        z = y.sum()
+        z.backward()
+        optimizer.step()
 
-            optimizer.zero_grad()
-            optimizer1.zero_grad()
+        y1 = model1(x1)
+        z1 = y1.sum()
+        z1.backward()
+        optimizer1.step()
 
-            y = model(x)
-            z = y.sum()
-            z.backward()
-            optimizer.step()
-
-            y1 = model1(x1)
-            z1 = y1.sum()
-            z1.backward()
-            optimizer1.step()
-
-            print('z diff: ', (z1 - z).item(), ', z ', z.item())
-            x = x1 = y = z = y1 = z1 = None
-        verbose(model, model1)
-
-    for m in model.modules():
-        if hasattr(m, 'memory_saving'):
-            m.memory_saving = False
-
-    for m in model1.modules():
-        if hasattr(m, 'memory_saving'):
-            m.memory_saving = True
-        if hasattr(m, 'level'):
-            m.level = 256
-    run()
-
-    #for m in model.modules():
-    #    if hasattr(m, 'inplace') and isinstance(m, nn.ReLU):
-    #        m.inplace = True
-
-    #for m in model1.modules():
-    #    if hasattr(m, 'inplace') and isinstance(m, nn.ReLU):
-    #        m.inplace = True
-
-    #run()
+        print('z diff: ', (z1 - z).item(), ', z ', z.item())
+    verbose(model, model1)
 
 def profile():
+    seed = 23
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.benchmark = True
@@ -147,20 +163,51 @@ def profile():
     torch.cuda.empty_cache()
     total_memory = torch.cuda.get_device_properties(0).total_memory * frac
     print("total_memory {} GB".format(total_memory / 1024 / 1024))
+    inplace = True
+    ReLU = ms.ReLU
     model = nn.Sequential(
             ms.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
-            ms.ReLU(True),
+            ReLU(inplace),
             ms.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
-            ms.ReLU(True),
+            ReLU(inplace),
             ms.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
-            ms.ReLU(True),
+            ReLU(inplace),
+
+            ms.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
+            ReLU(inplace),
+            ms.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
+            ReLU(inplace),
+            ms.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
+            ReLU(inplace),
+            ms.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
+            ReLU(inplace),
+            ms.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
+            ReLU(inplace),
+            ms.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
+            ReLU(inplace),
+            ms.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
+            ReLU(inplace),
+            ms.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
+            ReLU(inplace),
+            ms.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
+            ReLU(inplace),
+            ms.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
+            ReLU(inplace),
+            ms.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
+            ReLU(inplace),
+            ms.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
+            ReLU(inplace),
         )
     model = model.cuda()
     model.train()
+    #model.eval()
 
     ##########
     def b2mb(x): return int(x/2**20)
     class TorchTracemalloc():
+        def __init__(self, i):
+            self.id = i
+
         def __enter__(self):
             self.begin = torch.cuda.memory_allocated()
             torch.cuda.reset_max_memory_allocated() # reset the peak gauge to zero
@@ -171,7 +218,7 @@ def profile():
             self.peak = torch.cuda.max_memory_allocated()
             self.used   = b2mb(self.end-self.begin)
             self.peaked = b2mb(self.peak-self.begin)
-            print(f"delta used/peak {self.used:4d}/{self.peaked:4d}")
+            print(f"{self.id:4d} delta used/peak {self.used:4d}/{self.peaked:4d}")
 
     buffer_list = {}
     def tensor_id(init=False, buffers=None):
@@ -209,14 +256,14 @@ def profile():
         mod.register_forward_hook(_generate_mem_hook('fwd'))
         mod.register_backward_hook(_generate_mem_hook('bwd'))
 
-    def run(time=3, debug=[1]):
-        print(model)
+    def run(time=2, debug=[1]):
+        #print(model)
         torch.cuda.empty_cache()
         for i in range(time):
-            with TorchTracemalloc() as tt:
+            with TorchTracemalloc(i) as tt:
                 if i in debug:
                     tensor_id()  # only parameters 
-                x = torch.rand(512,64,56,56)
+                x = torch.rand(128,64,56,56)
                 x = x.cuda()
                 if i in debug:
                     print("x id {}\n".format(id(x)))
@@ -237,10 +284,12 @@ def profile():
                 z.backward()
                 if i in debug:
                     tensor_id() # x, y, z are observed
-                del x, y, z
+
+                x, y, z = None, None, None
 
             if i in debug and torch.__version__ >= "1.6":
-                print(prof.key_averages().table())
+                #print(prof.key_averages().table())
+                pass
 
     ###########
 
@@ -275,7 +324,36 @@ def profile():
             m.level = 255
     run()
 
+    ### 1. original pytorch module
+    #for m in model.modules():
+    #    if hasattr(m, 'memory_saving'):
+    #        m.memory_saving = False
+    #run()
+
+    ##return
+
+    ### 2. fuse conv and bn
+    #for m in model.modules():
+    #    if hasattr(m, 'memory_saving'):
+    #        m.memory_saving = True
+    #    if hasattr(m, 'level'):
+    #        m.level = 256
+    #run()
+
+    ##return
+
+    ### 3. quant saved tensor
+    #for m in model.modules():
+    #    if hasattr(m, 'memory_saving'):
+    #        m.memory_saving = True
+    #    if hasattr(m, 'level'):
+    #        m.level = 255
+    #run()
+
 if __name__ == "__main__":
-    #test(inplace=True)
-    profile()
+    test(inplace=True)
+    test(inplace=False)
+    #profile()
+    #demo()
+
 
