@@ -12,7 +12,7 @@ if torch.__version__ < "1.8":
 
 setup(
         name = 'memory_saving',
-        version = '1.0',
+        version = '1.0', # sync with memory_saving/__init__.py
         author = 'Peng Chen',
         author_email = 'blueardour@gmail.com',
         url = "https://github.com/blueardour/memory_saving",
