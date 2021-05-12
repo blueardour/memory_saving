@@ -65,16 +65,17 @@ def test(iteration=10, inplace=False):
 
     model = nn.Sequential(
             nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
-            ms.BatchNorm2d(64),
-            ms.Conv2d(64, 64, 3, bias=False),
-            nn.ReLU(inplace),
-            ms.cc.Conv2d(64, 64, 3, bias=False),
-            nn.ReLU(inplace),
-            ms.cc.Conv2d(64, 64, 3, bias=False),
-            nn.BatchNorm2d(64),
-            ms.ReLU(inplace),
-            ms.Conv2d(64, 64, 3, bias=False),
-            ms.ReLU(inplace),
+            ms.BN_ReLU(64),
+            #ms.BatchNorm2d(64),
+            #ms.Conv2d(64, 64, 3, bias=False),
+            #nn.ReLU(inplace),
+            #ms.cc.Conv2d(64, 64, 3, bias=False),
+            #nn.ReLU(inplace),
+            #ms.cc.Conv2d(64, 64, 3, bias=False),
+            #nn.BatchNorm2d(64),
+            #ms.ReLU(inplace),
+            #ms.Conv2d(64, 64, 3, bias=False),
+            #ms.ReLU(inplace),
             )
     #model = Model(inplace)
     model = model.cuda()
@@ -362,6 +363,6 @@ if __name__ == "__main__":
     #demo()
     test(inplace=True)
     #test(inplace=False)
-    profile()
+    #profile()
 
 

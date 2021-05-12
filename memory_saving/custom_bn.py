@@ -190,9 +190,12 @@ class BatchNorm2d(nn.BatchNorm2d):
 
     def __str__(self):
         if self.memory_saving:
-            return 'ms.' + self.repr
+            string = 'ms.' + self.repr
         else:
-            return self.repr
+            string = self.repr
+        if hasattr(self, 'relu'):
+            string += "\n\t-" + str(self.relu)
+        return string
 
     def forward(self, x):
         if self.memory_saving:
