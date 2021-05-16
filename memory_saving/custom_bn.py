@@ -147,12 +147,11 @@ class batchnorm2d(torch.autograd.Function):
         else:
             output, save_mean, save_var, reverse = native.batch_norm_forward(input, weight, bias, mean, var, training, average_factor, eps)
             if training:
-                ctx.bn_weight = (weight, mean, var, save_mean, save_var, reverse)
+                ctx.bn_parameter = (weight, bias, mean, var, save_mean, save_var, reverse, eps)
                 ctx.bn_input = input
         if training:
             ctx.need_sync = need_sync
         return output
-
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -161,11 +160,11 @@ class batchnorm2d(torch.autograd.Function):
                     bn_process_group, ctx.needs_input_grad[7:9], grad_output)
         else:
             input = ctx.bn_input
-            weight, running_mean, running_var, save_mean, save_var, reverse = ctx.bn_weight
+            weight, bias, running_mean, running_var, save_mean, save_var, reverse, eps = ctx.bn_parameter
             grad_input, grad_weight, grad_bias = native.batch_norm_backward(input, grad_output, weight, running_mean, running_var, \
                     save_mean, save_var, 0, reverse)
             ctx.bn_input = None
-            ctx.bn_weight = None
+            ctx.bn_parameter = None
         ctx.need_sync = None
 
         #if not ctx.needs_input_grad[0]:
