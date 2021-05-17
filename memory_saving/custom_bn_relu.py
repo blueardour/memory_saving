@@ -20,14 +20,25 @@ class batchnorm2d_relu(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-
-        y = ctx.relu_output
-
-        grad_input, _, _, _, _ = custom_relu.relu.backward(ctx, grad_output)
-
         # restore
-        ctx.bn_input = y
-        ctx.bn_input = ctx.tmp
+        bn_output = ctx.relu_input
+        #if not ctx.need_sync:
+        #    bn_weight, bn_bias, bn_running_mean, bn_running_var, bn_save_mean, bn_save_var, bn_reverse, bn_eps = ctx.bn_parameter
+        #    #print("shape", bn_output.shape, bn_bias.shape, bn_weight.shape, bn_save_var.shape, bn_save_mean.shape)
+        #    bn_output = bn_output.subtract(bn_bias.reshape(1,-1,1,1))
+        #    bn_output = bn_output.div(bn_weight.mul(torch.rsqrt(bn_save_var + bn_eps)).reshape(1,-1,1,1))
+        #    bn_output = bn_output.add(bn_save_mean.reshape(1,-1,1,1))
+        #    # compare with ctx.tmp
+        #    compare = bn_output == ctx.tmp
+        #    print("debug", compare.sum(), compare.size())
+        #ctx.bn_input = bn_output
+        out = torch.batch_norm_elemt(input, weight, bias, mean, invstd, eps)
+        ctx.bn_input = ctx.tmp.masked_fill_(bn_output <= 0, 0)
+        #ctx.bn_input = torch.where(bn_output < 0, bn_save_mean.reshape(1,-1,1,1), ctx.tmp)
+        bn_output = None
+
+        # ReLU
+        grad_input, _, _, _, _ = custom_relu.relu.backward(ctx, grad_output)
 
         grad_input, grad_weight, grad_bias, _, _, _, _, _, _, _, _ = custom_bn.batchnorm2d.backward(ctx, grad_input)
         return grad_input, grad_weight, grad_bias, None, None, None, None, None, None, None, None, None, None, None

@@ -65,7 +65,8 @@ def test(iteration=10, inplace=False):
 
     model = nn.Sequential(
             nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
-            ms.BN_ReLU(64),
+            #ms.BN_ReLU(64),
+            ms.GELU()
             #ms.BatchNorm2d(64),
             #ms.Conv2d(64, 64, 3, bias=False),
             #nn.ReLU(inplace),
