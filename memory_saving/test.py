@@ -63,10 +63,16 @@ def test(iteration=10, inplace=False):
             x = self.relu(x)
             return x
 
+    class Flatten(nn.Module):
+        def forward(self, input):
+            return input.view(input.size(0), -1)
+
     model = nn.Sequential(
             nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
-            #ms.BN_ReLU(64),
-            ms.GELU()
+            ms.GELU(),
+            #Flatten(),
+            #ms.Linear(64 * 56 * 56, 100),
+            ms.LayerNorm([64,56,56]),
             #ms.BatchNorm2d(64),
             #ms.Conv2d(64, 64, 3, bias=False),
             #nn.ReLU(inplace),
@@ -79,7 +85,7 @@ def test(iteration=10, inplace=False):
             #ms.ReLU(inplace),
             )
     #model = Model(inplace)
-    model = model.cuda()
+    #model = model.cuda()
 
     for m in model.modules():
         if isinstance(m, nn.Conv2d):
@@ -135,7 +141,7 @@ def test(iteration=10, inplace=False):
         print("index: ", i)
         x = torch.rand(512,64,56,56)
         x = x - 0.5
-        x = x.cuda()
+        #x = x.cuda()
         x1 = x.clone()
 
         y = model(x)
