@@ -5,8 +5,8 @@ import torch.nn.functional as F
 import sys
 import logging
 
-from . import custom_quant
-from . import packbit
+import custom_quant
+import packbit
 
 class linear(torch.autograd.Function):
     @staticmethod
@@ -34,9 +34,8 @@ class linear(torch.autograd.Function):
 class Linear(nn.Linear, custom_quant.Quant):
     def __init__(self, in_features, out_features, bias=True, \
             memory_saving=False, args=None, logger=None):
+        super(Linear, self).__init__(in_features, out_features, bias=bias)
         custom_quant.Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger)
-        nn.Linear.__init__(self, in_features, out_features, bias=bias)
-        self.repr = nn.Linear.__repr__(self)
 
     def forward(self, x):
         if self.memory_saving:
@@ -45,4 +44,10 @@ class Linear(nn.Linear, custom_quant.Quant):
             y = F.linear(x, self.weight, self.bias)
         self.iteration.add_(1)
         return y
+
+if __name__ == "__main__":
+    model = Linear(100, 100)
+    print(model)
+    model.memory_saving = True
+    print(model)
 

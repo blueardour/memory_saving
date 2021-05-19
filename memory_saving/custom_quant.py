@@ -6,13 +6,11 @@ import torch.nn.functional as F
 
 import logging
 
-class Quant(nn.Module):
+class Quant(object):
     def __init__(self, memory_saving=False, args=None, logger=None):
-        super(Quant, self).__init__()
-
         self.memory_saving = memory_saving
 
-        # lsq
+        # quantizer
         self.iteration = nn.Parameter(torch.zeros(1), requires_grad=False)
         self.clip_val = nn.Parameter(torch.Tensor([1.0]))
         self.level = 255
@@ -24,6 +22,7 @@ class Quant(nn.Module):
         self.logger = logger
         self.args = args
         self.string = 'ms.'
+        self.repr = super(type(self), self).__repr__()
 
         if logger is None:
             if hasattr(args, 'logger'):
@@ -85,10 +84,3 @@ class Quant(nn.Module):
                 if iteration == (self.stable - 1):
                     self.logger.info('update %s clip_val for index %d to %r' % (self.tag, self.index, self.clip_val.item()))
 
-    #@staticmethod
-    #def foward(ctx, x):
-    #    scale = interval / level
-    #    x.div_(scale)
-    #    y = torch.clamp(-1, 2)  2
-    #            y = torch.round(x)
-    #            x = y.mul(scale)

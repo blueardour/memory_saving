@@ -8,6 +8,9 @@ from .custom_layer_norm import LayerNorm
 from .custom_fc import Linear
 
 from . import custom_conv as cc
-from . import test as test
+from . import test
+from . import custom_quant
+from . import packbit
+from . import native
 
 version=1.0
