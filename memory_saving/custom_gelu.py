@@ -4,9 +4,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pdb
 
-import native
-import custom_quant
-import packbit
+from . import native
+from . import custom_quant
+from . import packbit
 
 class gelu(torch.autograd.Function):
     @staticmethod
@@ -32,6 +32,9 @@ class GELU(nn.GELU, custom_quant.Quant):
         super(GELU, self).__init__()
         custom_quant.Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger)
 
+    def __repr__(self):
+        return self.__str__()
+
     def forward(self, x):
         if self.memory_saving:
             y = gelu.apply(x, self.training)
@@ -45,3 +48,8 @@ if __name__ == "__main__":
     model.memory_saving = True
     print(model)
 
+    import memory_saving as  ms
+    model = ms.GELU()
+    print(model)
+    model.memory_saving = True
+    print(model)

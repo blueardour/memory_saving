@@ -11,6 +11,5 @@ from . import custom_conv as cc
 from . import test
 from . import custom_quant
 from . import packbit
-from . import native
 
 version=1.0

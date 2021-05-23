@@ -69,7 +69,7 @@ def test(iteration=10, inplace=False):
 
     model = nn.Sequential(
             nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
-            ms.GELU(),
+            ms.GELU(memory_saving=True),
             #Flatten(),
             #ms.Linear(64 * 56 * 56, 100),
             ms.LayerNorm([64,56,56]),
@@ -87,19 +87,23 @@ def test(iteration=10, inplace=False):
     #model = Model(inplace)
     #model = model.cuda()
 
+    #model = ms.LayerNorm([64,56,56], memory_saving=True)
+
+    print(model)
     for m in model.modules():
         if isinstance(m, nn.Conv2d):
             nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
 
     model1 = copy.deepcopy(model)
-    #model1 = pickle.loads(pickle.dumps(model))
 
     for m in model.modules():
         if hasattr(m, 'memory_saving'):
+            #print("module {} memory_saving: {}".format(type(m), m.memory_saving))
             m.memory_saving = False
 
     for m in model1.modules():
         if hasattr(m, 'memory_saving'):
+            #print("module {} memory_saving: {}".format(type(m), m.memory_saving))
             m.memory_saving = True
         if hasattr(m, 'level'):
             m.level = 256

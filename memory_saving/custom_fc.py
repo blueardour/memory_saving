@@ -5,8 +5,9 @@ import torch.nn.functional as F
 import sys
 import logging
 
-import custom_quant
-import packbit
+from . import native
+from . import custom_quant
+from . import packbit
 
 class linear(torch.autograd.Function):
     @staticmethod

@@ -4,8 +4,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pdb
 
-from . import custom_quant
 from . import native
+from . import custom_quant
 from . import packbit
 
 class layer_norm(torch.autograd.Function):
@@ -68,9 +68,8 @@ class layer_norm(torch.autograd.Function):
 class LayerNorm(nn.LayerNorm, custom_quant.Quant):
     def __init__(self, normalized_shape, eps=1e-05, elementwise_affine=True, \
                 memory_saving=False, args=None, logger=None):
+        super(LayerNorm, self).__init__(normalized_shape, eps=eps, elementwise_affine=elementwise_affine)
         custom_quant.Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger)
-        nn.LayerNorm.__init__(self, normalized_shape, eps=eps, elementwise_affine=elementwise_affine)
-        self.repr = nn.LayerNorm.__repr__(self)
 
     def forward(self, x):
         if self.memory_saving:

@@ -51,9 +51,6 @@ class Quant(object):
             self.logger.info("index({})-clip_val({})-level({})-stable({})-correlate({})-non_negative_only({})".format(
                 self.index, self.clip_val.item(), self.level, self.stable, self.correlate, self.non_negative_only))
 
-    def __repr__(self):
-        return self.__str__()
-
     def __str__(self):
         if hasattr(self, 'repr'):
             string = self.repr
