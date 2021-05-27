@@ -38,6 +38,9 @@ class Linear(nn.Linear, custom_quant.Quant):
         super(Linear, self).__init__(in_features, out_features, bias=bias)
         custom_quant.Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger)
 
+    def __repr__(self):
+        return self.__str__()
+
     def forward(self, x):
         if self.memory_saving:
             y = linear.apply(x, self.weight, self.bias)

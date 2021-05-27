@@ -12,4 +12,6 @@ from . import test
 from . import custom_quant
 from . import packbit
 
+from . import models
+
 version=1.0

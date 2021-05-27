@@ -44,6 +44,7 @@ class layer_norm(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
+        grad_output = grad_output.continuous()
         x = ctx.layer_norm_input
 
         output_mask = [ctx.needs_input_grad[0], ctx.needs_input_grad[2], ctx.needs_input_grad[3]]
@@ -51,9 +52,11 @@ class layer_norm(torch.autograd.Function):
         if torch.__version__  >= "1.8":
             mean, rstd, weight, bias, normalized_shape = ctx.layer_norm_parameters
             if grad_output.is_cuda:
-                grad_input, grad_weight, grad_bias = native.layer_norm_backward_cuda(grad_output, x, normalized_shape, mean, rstd, weight, bias, output_mask)
+                grad_input, grad_weight, grad_bias = \
+                    native.layer_norm_backward_cuda(grad_output, x, normalized_shape, mean, rstd, weight, bias, output_mask)
             else:
-                grad_input, grad_weight, grad_bias = native.layer_norm_backward_cpu(grad_output, x, normalized_shape, mean, rstd, weight, bias, output_mask)
+                grad_input, grad_weight, grad_bias = \
+                    native.layer_norm_backward_cpu(grad_output, x, normalized_shape, mean, rstd, weight, bias, output_mask)
         else:
             mean, rstd, weight, M, N = ctx.layer_norm_parameters
 
@@ -70,6 +73,9 @@ class LayerNorm(nn.LayerNorm, custom_quant.Quant):
                 memory_saving=False, args=None, logger=None):
         super(LayerNorm, self).__init__(normalized_shape, eps=eps, elementwise_affine=elementwise_affine)
         custom_quant.Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger)
+
+    def __repr__(self):
+        return self.__str__()
 
     def forward(self, x):
         if self.memory_saving:
