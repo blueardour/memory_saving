@@ -18,7 +18,7 @@ class matmul(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input, weight, bias=None):
         ctx.save_for_backward(input, weight, bias)
-        output = input.mm(weight.t())
+        output = input.matmul(weight.t())
         if bias is not None:
             output += bias.unsqueeze(0).expand_as(output)
         return output
@@ -29,9 +29,9 @@ class matmul(torch.autograd.Function):
         grad_input = grad_weight = grad_bias = None
 
         if ctx.needs_input_grad[0]:
-            grad_input = grad_output.mm(weight)
+            grad_input = grad_output.matmul(weight)
         if ctx.needs_input_grad[1]:
-            grad_weight = grad_output.t().mm(input)
+            grad_weight = grad_output.t().matmul(input)
         if bias is not None and ctx.needs_input_grad[2]:
             grad_bias = grad_output.sum(0)
 
