@@ -14,7 +14,7 @@ else:
     from . import packbit
     from . import native
     
-class linear(torch.autograd.Function):
+class matmul(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input, weight, bias=None):
         ctx.save_for_backward(input, weight, bias)
@@ -37,26 +37,21 @@ class linear(torch.autograd.Function):
 
         return grad_input, grad_weight, grad_bias
 
-class Linear(nn.Linear):
-    def __init__(self, in_features, out_features, bias=True, \
-            memory_saving=False, args=None, logger=None):
-        super(Linear, self).__init__(in_features, out_features, bias=bias)
-        custom_quant.Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger)
+class MatMul(nn.Module):
+    def __init__(self, memory_saving=False, args=None, logger=None):
+        super(MatMul, self).__init__()
+        self.quant1 = custom_quant.Quant(memory_saving=memory_saving, args=args, logger=logger)
+        self.quant2 = custom_quant.Quant(memory_saving=memory_saving, args=args, logger=logger)
 
-    def __repr__(self):
-        return custom_quant.Quant.__str__(self)
-
-    def forward(self, x):
-        if self.memory_saving:
-            y = linear.apply(x, self.weight, self.bias)
+    def forward(self, x1, x2):
+        if self.quant1.memory_saving and self.quant2.memory_saving:
+            y = matmul.apply(x1, x2)
         else:
-            y = F.linear(x, self.weight, self.bias)
-        self.iteration.add_(1)
+            y = torch.matmul(x1, x2)
         return y
 
+
 if __name__ == "__main__":
-    model = Linear(100, 100)
-    print(model)
-    model.memory_saving = True
+    model = MatMul()
     print(model)
 

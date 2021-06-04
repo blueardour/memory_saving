@@ -2,7 +2,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import pdb
 
 from . import native
 from . import custom_quant
@@ -44,7 +43,7 @@ class layer_norm(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        grad_output = grad_output.continuous()
+        grad_output = grad_output.contiguous()
         x = ctx.layer_norm_input
 
         output_mask = [ctx.needs_input_grad[0], ctx.needs_input_grad[2], ctx.needs_input_grad[3]]
