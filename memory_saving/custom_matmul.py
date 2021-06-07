@@ -20,8 +20,6 @@ class matmul(torch.autograd.Function):
             fp_forward1=False, clip_val1=None, level1=256, non_negative_only1=True, \
             fp_forward2=False, clip_val2=None, level2=256, non_negative_only2=True):
   
-        #import pdb
-        #pdb.set_trace()      
         input1 = custom_quant.Quant.forward(ctx, input1, training, fp_forward1, clip_val1, level1, non_negative_only1, '_1')
         input2 = custom_quant.Quant.forward(ctx, input2, training, fp_forward2, clip_val2, level2, non_negative_only2, '_2')
         output = input1.matmul(input2)
@@ -35,9 +33,9 @@ class matmul(torch.autograd.Function):
         input2 = custom_quant.Quant.restore(ctx, '_2')
 
         if ctx.needs_input_grad[0]:
-            grad_input1 = grad_output.matmul(input2)
+            grad_input1 = grad_output.matmul(input2.transpose(-2, -1))
         if ctx.needs_input_grad[1]:
-            grad_input2 = grad_output.t().matmul(input1)
+            grad_input2 = input1.transpose(-2, -1).matmul(grad_output)
 
         if ctx.needs_input_grad[4]:
             grad_clip1 = custom_quant.Quant.backward(ctx, grad_input1, '_1')
@@ -58,8 +56,6 @@ class MatMul(nn.Module):
                 self.quant1.fp_forward, self.quant1.clip_val.abs(), self.quant1.level, self.quant1.non_negative_only, \
                 self.quant2.fp_forward, self.quant2.clip_val.abs(), self.quant2.level, self.quant2.non_negative_only)
         else:
-            import pdb
-            pdb.set_trace()      
             y = torch.matmul(x1, x2)
         return y
 
