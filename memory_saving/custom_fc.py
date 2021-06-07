@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import sys
 import logging
 
-if __name__ == "__main__":
+if 'memory_saving' not in __name__:
     import custom_quant
     import packbit
     import native
@@ -16,8 +16,11 @@ else:
     
 class linear(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, input, weight, bias=None):
-        ctx.save_for_backward(input, weight, bias)
+    def forward(ctx, x, weight, bias=None, training=True, fp_forward=False, clip_val=None, level=256, non_negative_only=True):
+
+        input = custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only)
+        ctx.save_for_backward(weight, bias)
+
         output = input.matmul(weight.t())
         if bias is not None:
             output += bias.unsqueeze(0).expand_as(output)
@@ -25,8 +28,10 @@ class linear(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        input, weight, bias = ctx.saved_tensors
-        grad_input = grad_weight = grad_bias = None
+        grad_input = grad_weight = grad_bias = grad_clip = None
+
+        weight, bias = ctx.saved_tensors
+        input = custom_quant.Quant.restore(ctx)
 
         if ctx.needs_input_grad[0]:
             grad_input = grad_output.matmul(weight)
@@ -35,7 +40,10 @@ class linear(torch.autograd.Function):
         if bias is not None and ctx.needs_input_grad[2]:
             grad_bias = grad_output.sum(0)
 
-        return grad_input, grad_weight, grad_bias
+        if ctx.needs_input_grad[5]:
+            grad_clip = custom_quant.Quant.backward(ctx, grad_input)
+
+        return grad_input, grad_weight, grad_bias, None, None, grad_clip, None, None
 
 class Linear(nn.Linear):
     def __init__(self, in_features, out_features, bias=True, \
@@ -48,7 +56,7 @@ class Linear(nn.Linear):
 
     def forward(self, x):
         if self.memory_saving:
-            y = linear.apply(x, self.weight, self.bias)
+            y = linear.apply(x, self.weight, self.bias, self.training, self.fp_forward, self.clip_val.abs(), self.level, self.non_negative_only)
         else:
             y = F.linear(x, self.weight, self.bias)
         self.iteration.add_(1)

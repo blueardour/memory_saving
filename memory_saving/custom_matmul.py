@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import sys
 import logging
 
-if __name__ == "__main__":
+if 'memory_saving' not in __name__:
     import custom_quant
     import packbit
     import native
@@ -16,42 +16,59 @@ else:
     
 class matmul(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, input, weight, bias=None):
-        ctx.save_for_backward(input, weight, bias)
-        output = input.matmul(weight.t())
-        if bias is not None:
-            output += bias.unsqueeze(0).expand_as(output)
+    def forward(ctx, input1, input2, training=True, \
+            fp_forward1=False, clip_val1=None, level1=256, non_negative_only1=True, \
+            fp_forward2=False, clip_val2=None, level2=256, non_negative_only2=True):
+  
+        #import pdb
+        #pdb.set_trace()      
+        input1 = custom_quant.Quant.forward(ctx, input1, training, fp_forward1, clip_val1, level1, non_negative_only1, '_1')
+        input2 = custom_quant.Quant.forward(ctx, input2, training, fp_forward2, clip_val2, level2, non_negative_only2, '_2')
+        output = input1.matmul(input2)
         return output
 
     @staticmethod
     def backward(ctx, grad_output):
-        input, weight, bias = ctx.saved_tensors
-        grad_input = grad_weight = grad_bias = None
+        grad_input1 = grad_input2 = grad_clip1 = grad_clip2 = None
+
+        input1 = custom_quant.Quant.restore(ctx, '_1')
+        input2 = custom_quant.Quant.restore(ctx, '_2')
 
         if ctx.needs_input_grad[0]:
-            grad_input = grad_output.matmul(weight)
+            grad_input1 = grad_output.matmul(input2)
         if ctx.needs_input_grad[1]:
-            grad_weight = grad_output.t().matmul(input)
-        if bias is not None and ctx.needs_input_grad[2]:
-            grad_bias = grad_output.sum(0)
+            grad_input2 = grad_output.t().matmul(input1)
 
-        return grad_input, grad_weight, grad_bias
+        if ctx.needs_input_grad[4]:
+            grad_clip1 = custom_quant.Quant.backward(ctx, grad_input1, '_1')
+        if ctx.needs_input_grad[8]:
+            grad_clip2 = custom_quant.Quant.backward(ctx, grad_input2, '_2')
+
+        return grad_input1, grad_input2, None, None, grad_clip1, None, None, None, grad_clip2, None, None
 
 class MatMul(nn.Module):
     def __init__(self, memory_saving=False, args=None, logger=None):
         super(MatMul, self).__init__()
-        self.quant1 = custom_quant.Quant(memory_saving=memory_saving, args=args, logger=logger)
-        self.quant2 = custom_quant.Quant(memory_saving=memory_saving, args=args, logger=logger)
+        self.quant1 = custom_quant.quantization()
+        self.quant2 = custom_quant.quantization()
 
     def forward(self, x1, x2):
         if self.quant1.memory_saving and self.quant2.memory_saving:
-            y = matmul.apply(x1, x2)
+            y = matmul.apply(x1, x2, self.training, \
+                self.quant1.fp_forward, self.quant1.clip_val.abs(), self.quant1.level, self.quant1.non_negative_only, \
+                self.quant2.fp_forward, self.quant2.clip_val.abs(), self.quant2.level, self.quant2.non_negative_only)
         else:
+            import pdb
+            pdb.set_trace()      
             y = torch.matmul(x1, x2)
         return y
 
 
 if __name__ == "__main__":
     model = MatMul()
+    print(model)
+
+    model.quant1.memory_saving = True
+    model.quant2.memory_saving = True
     print(model)
 
