@@ -50,6 +50,10 @@ class MatMul(nn.Module):
         self.quant1 = custom_quant.quantization()
         self.quant2 = custom_quant.quantization()
 
+    def update_quantization_parameter(self, **parameters):
+        self.quant1.update_quantization_parameter(**parameters)
+        self.quant2.update_quantization_parameter(**parameters)
+
     def forward(self, x1, x2):
         if self.quant1.memory_saving and self.quant2.memory_saving:
             y = matmul.apply(x1, x2, self.training, \

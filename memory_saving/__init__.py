@@ -13,5 +13,6 @@ from . import custom_quant
 from . import packbit
 
 from . import models
+from . import policy
 
 version=1.0

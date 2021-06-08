@@ -91,6 +91,106 @@ class Quant(object):
                 if iteration == (self.stable - 1):
                     self.logger.info('update %s clip_val for index %d to %r' % (self.tag, self.index, self.clip_val.item()))
 
+    def update_quantization_parameter(self, **parameters):
+        feedback = dict()
+        index = self.index
+        if 'index' in parameters:
+            if isinstance(parameters['index'], int):
+                index =  parameters['index']
+            elif isinstance(parameters['index'], dict) and self.tag in parameters['index']:
+                index = parameters['index'][self.tag]
+        if index != self.index:
+            self.index = index
+            self.logger.info('update %s_index %r' % (self.tag, self.index))
+
+        if 'by_index' in parameters:
+            by_index = parameters['by_index']
+            if isinstance(by_index, list) or (isinstance(by_index, str) and by_index != "all"):
+                try:
+                    if not isinstance(by_index, list):
+                        by_index = by_index.split()
+                    by_index = [int(i) for i in by_index]
+                except (ValueError, SyntaxError) as e:
+                    self.logger.warning('unexpect string in by_index: {}'.format(by_index))
+
+            if by_index == 'all' or self.index in by_index:
+                if ('by_tag' in parameters and self.tag in parameters['by_tag']) or ('by_tag' not in parameters):
+                        for k, v in list(parameters.items()):
+                            if hasattr(self, "{}".format(k)):
+                                if isinstance(getattr(self, k), bool):
+                                    v = False if v in ['False', 'false', False] else True
+                                elif isinstance(getattr(self, k), int):
+                                    v = int(v)
+                                elif isinstance(getattr(self, k), float):
+                                    v = float(v)
+                                elif isinstance(getattr(self, k), str):
+                                    v = v.replace("'", "").replace('"', '')
+                                    if 'same' in v:
+                                        v = v.replace('same', str(self.index))
+                                    elif "last" in v:
+                                        v = v.replace('last', str(self.index-1))
+                                if isinstance(getattr(self, k), torch.Tensor):
+                                    with torch.no_grad():
+                                        if getattr(self, 'progressive', False):
+                                            if 'lsq' in self.args.keyword or '{}_lsq'.format(self.tag) in self.args.keyword:
+                                                if k in ['level_num']:
+                                                    #if hasattr(self, 'clip_val'):
+                                                    v = float(v)
+                                                    # if negative number provide, it indicates decreasing on current
+                                                    v = v if v > 0 else self.level_num.item() + v
+
+                                                    assert v > 1.9, "level_num should be at least 2"
+                                                    scale = (v - 1) / (self.level_num.item() - 1)
+                                                    self.clip_val.mul_(scale)
+                                                    self.logger.info('update {}_clip_val to {} for index {}'.format(
+                                                        self.tag, self.clip_val, self.index))
+
+                                                    # remember to patch the momentum in SGD optimizer. set it to zero or multiple by scale
+                                                    if 'reset_momentum_list' in feedback:
+                                                        feedback['reset_momentum_list'].append(self.clip_val)
+                                                    else:
+                                                        feedback['reset_momentum_list'] = [self.clip_val]
+                                        getattr(self, k).fill_(float(v))
+                                    self.logger.info('update {}_{} to {} for index {}'.format(
+                                        self.tag, k, getattr(self, k, 'Non-Exist'), self.index))
+                                else:
+                                    setattr(self, "{}".format(k), v)
+                                    self.logger.info('update {}_{} to {} for index {}'.format(
+                                        self.tag, k, getattr(self, k, 'Non-Exist'), self.index))
+                                if self.enable:
+                                    assert hasattr(self, 'iteration'), \
+                                        "cannot enable quantization for current layer. Likely an error in policy file"
+                            # global_buffer
+                            if k in ['global_buffer'] and hasattr(self.args, 'global_buffer'):
+                                v = str(v)
+                                if isinstance(getattr(self.args, k, None), dict) and hasattr(self, v) and self.enable:
+                                    key = "{}-{}-{}".format(v, self.index, self.tag)
+                                    self.args.global_buffer[key] = getattr(self, v)
+                                    self.logger.info('update global_buffer (current length: {}), key: {}'.format(
+                                        len(self.args.global_buffer), key))
+
+        if not self.enable:
+            return None
+        else:
+            if hasattr(self, 'quant_loss_function') and isinstance(self.quant_loss_function, str):
+                qlf = self.quant_loss_function.split()
+                quant_loss_function = []
+                for loss_method in qlf:
+                    if loss_method == 'L2':
+                        quant_loss_function.append(nn.MSELoss())
+                    elif loss_method == 'L1':
+                        quant_loss_function.append(nn.L1Loss())
+                if len(quant_loss_function) != 0:
+                    self.quant_loss_function = quant_loss_function
+                    self.logger.info('update quant_loss_function: {} for layer(index:{}, tag:{})'.format(
+                        self.quant_loss_function, self.index, self.tag))
+                else:
+                    self.quant_loss_function = 'none'
+            if hasattr(self, 'method'):
+                assert self.method != 'none', "quantization enable but without specific method in layer(index:{}, tag:{})".format(
+                    self.index, self.tag)
+            return feedback
+
     @staticmethod
     def forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, identifier="_"):
         if level > 256:

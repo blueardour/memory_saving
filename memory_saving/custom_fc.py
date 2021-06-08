@@ -45,14 +45,14 @@ class linear(torch.autograd.Function):
 
         return grad_input, grad_weight, grad_bias, None, None, grad_clip, None, None
 
-class Linear(nn.Linear):
+class Linear(nn.Linear, custom_quant.Quant):
     def __init__(self, in_features, out_features, bias=True, \
             memory_saving=False, args=None, logger=None):
         super(Linear, self).__init__(in_features, out_features, bias=bias)
         custom_quant.Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger)
 
     def __repr__(self):
-        return custom_quant.Quant.__str__(self)
+        return self.__str__()
 
     def forward(self, x):
         if self.memory_saving:
