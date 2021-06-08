@@ -6,6 +6,7 @@ from .custom_gelu import GELU
 from .custom_layer_norm import LayerNorm
 from .custom_fc import Linear
 from .custom_matmul import MatMul
+from .custom_softmax import Softmax
 
 from . import custom_conv as cc
 from . import test

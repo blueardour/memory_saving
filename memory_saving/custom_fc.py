@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 import sys
 import logging
 
@@ -34,13 +35,15 @@ class linear(torch.autograd.Function):
         input = custom_quant.Quant.restore(ctx)
 
         if ctx.needs_input_grad[0]:
-            grad_input = grad_output.matmul(weight)
+            grad_input = grad_output.matmul(weight.to(dtype=grad_output.dtype))
+
         if ctx.needs_input_grad[1]:
-            grad_weight = grad_output.t().matmul(input)
+            grad_weight = grad_output.transpose(-2, -1).matmul(input.to(dtype=grad_output.dtype))
+
         if bias is not None and ctx.needs_input_grad[2]:
             grad_bias = grad_output.sum(0)
 
-        if ctx.needs_input_grad[5]:
+        if ctx.needs_input_grad[0] and grad_input is not None:
             grad_clip = custom_quant.Quant.backward(ctx, grad_input)
 
         return grad_input, grad_weight, grad_bias, None, None, grad_clip, None, None
@@ -50,21 +53,23 @@ class Linear(nn.Linear, custom_quant.Quant):
             memory_saving=False, args=None, logger=None):
         super(Linear, self).__init__(in_features, out_features, bias=bias)
         custom_quant.Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger)
+        self.tag = 'fc'
 
     def __repr__(self):
         return self.__str__()
 
     def forward(self, x):
-        if self.memory_saving:
+        if self.enable:
             y = linear.apply(x, self.weight, self.bias, self.training, self.fp_forward, self.clip_val.abs(), self.level, self.non_negative_only)
         else:
             y = F.linear(x, self.weight, self.bias)
+        #print('in Linear[{}] debug dtype'.format(self.index), x.dtype, self.weight.dtype, self.bias.dtype if self.bias is not None else None, self.clip_val.dtype, y.dtype)
         self.iteration.add_(1)
         return y
 
 if __name__ == "__main__":
     model = Linear(100, 100)
     print(model)
-    model.memory_saving = True
+    model.enable = True
     print(model)
 

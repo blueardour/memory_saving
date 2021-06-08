@@ -82,9 +82,11 @@ def deploy_on_init(model, filename, verbose=print):
     if not hasattr(model, 'modules'):
         return
 
-    tags_count = { 'conv': 0, 'fc': 0, 'eltwise': 0, 'shuffle': 0, 'concat': 0, 'norm': 0 }
+    tags_count = { 'conv': 0, 'fc': 0, 'eltwise': 0, 'shuffle': 0, 'concat': 0, 'norm': 0,
+                   'gelu': 0, 'layernorm': 0, 'matmul': 0, 'softmax': 0 }
     for k in tags_count:
         # assign index
+        verbose("assign index for module with tag {} ".format(k))
         for m in model.modules():
             if hasattr(m, 'update_quantization_parameter') and getattr(m , 'tag', '') == k:
                 m.update_quantization_parameter(index=tags_count[k])
@@ -98,7 +100,7 @@ def deploy_on_init(model, filename, verbose=print):
             attributes = p
             assert isinstance(attributes, dict), "Error attributes"
             for m in model.modules():
-                if hasattr(m, 'update_quantization_parameter'):
+                if hasattr(m, 'update_quantization_parameter') and getattr(m , 'tag', '') == k:
                     m.update_quantization_parameter(**attributes)
 
 def deploy_on_epoch(model, policies, epoch, optimizer=None, verbose=print):

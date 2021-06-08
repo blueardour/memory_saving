@@ -12,10 +12,10 @@ else:
     from . import native
 
 class Quant(object):
-    def __init__(self, memory_saving=False, args=None, logger=None):
+    def __init__(self, memory_saving=False, args=None, logger=None, enable=False, tag='fm'):
         assert isinstance(self, nn.Module)
 
-        self.memory_saving = memory_saving
+        self.enable = memory_saving or enable
         self.fp_forward = False
         # quantizer
         self.iteration = nn.Parameter(torch.zeros(1), requires_grad=False)
@@ -24,19 +24,26 @@ class Quant(object):
         self.stable = -1
         self.correlate = 1.0
         self.non_negative_only = False
-        self.tag = 'fm'
+        self.tag = tag
         self.index = -1
         self.logger = logger
         self.args = args
         self.string = 'ms.'
         self.repr = super(type(self), self).__repr__()
 
+        class logger_wrapper(object):
+            def info(self, string):
+                print(string)
+
         if logger is None:
             if hasattr(args, 'logger'):
                 self.logger = args.logger
             else:
-                logger_root = args.logger_root + '.' if hasattr(args, 'logger_root') else ''
-                self.logger = logging.getLogger(logger_root + __name__)
+                if args is None:
+                    self.logger = logger_wrapper() 
+                else:
+                    logger_root = args.logger_root + '.' if hasattr(args, 'logger_root') else ''
+                    self.logger = logging.getLogger(logger_root + __name__)
 
         if args is not None:
             if hasattr(args, 'fm_bit') and args.fm_bit is not None:
@@ -50,7 +57,7 @@ class Quant(object):
             if hasattr(args, 'fm_correlate'):
                 self.correlate = args.fm_correlate
             if hasattr(args, 'fm_enable'):
-                self.memory_saving = self.memory_saving or args.fm_enable
+                self.enable = self.enable or args.fm_enable
             if hasattr(args, 'fm_nno'):
                 self.non_negative_only = self.non_negative_only and args.nno
             if hasattr(args, 'fm_half_range'):
@@ -60,16 +67,24 @@ class Quant(object):
             
             self.logger.info("index({})-clip_val({})-level({})-stable({})-correlate({})-non_negative_only({})".format(
                 self.index, self.clip_val.item(), self.level, self.stable, self.correlate, self.non_negative_only))
+        self.items = ['index', 'tag', 'clip_val', 'level', 'stable', 'correlate', 'non_negative_only']
 
     def __str__(self):
         if hasattr(self, 'repr'):
             string = self.repr
 
-        if self.memory_saving:
+        if self.enable:
             if hasattr(self, 'string'):
                 string = self.string + string
-            string = string + "-clip_val({})-level({})-stable({})-correlate({})-non_negative_only({})-fp_forward({})".format(
-                self.clip_val.item(), self.level, self.stable, self.correlate, self.non_negative_only, self.fp_forward)
+            for item in self.items:
+                if hasattr(self, item):
+                    value = getattr(self, item)
+                    if isinstance(value, torch.Tensor):
+                        if value.numel() == 1:
+                            value = value.item()
+                        else:
+                            continue
+                    string = string + "-{}({})".format(item, value)
 
         if hasattr(self, 'norm'):
             string += "\n\t-" + str(self.norm)
@@ -77,7 +92,7 @@ class Quant(object):
         return string
 
     def init_based_on_warmup(self, data=None):
-        if not self.memory_saving and data is None:
+        if not self.enable and data is None:
             return
 
         iteration = self.iteration.item()
@@ -198,6 +213,7 @@ class Quant(object):
             if training:
                 setattr(ctx, 'input{}'.format(identifier), y)
         else:
+            clip_val = clip_val.to(dtype=x.dtype)
             if non_negative_only:
                 y = x / clip_val * (level-1)
                 y = torch.round(y)
@@ -215,7 +231,7 @@ class Quant(object):
                 y = y / (level//2) * clip_val
                 is_filtered = (x >= (clip_val * (level-level//2-1) / (level//2))) | (x <= -clip_val)
             if training:
-                setattr(ctx, 'is_filtered{}'.format(identifier), packbit.packbits_padded(is_filtered, dim=1))
+                setattr(ctx, 'is_filtered{}'.format(identifier), packbit.packbits_padded(is_filtered, dim=0))
                 setattr(ctx, 'clip_val{}'.format(identifier), clip_val)
 
         if training:
@@ -228,14 +244,15 @@ class Quant(object):
         input = getattr(ctx, 'input{}'.format(identifier))
         level = getattr(ctx, 'level{}'.format(identifier))
         non_negative_only = getattr(ctx, 'non_negative_only{}'.format(identifier))
+        setattr(ctx, 'input{}'.format(identifier), None)
         if level > 256:
             y = input
         else:
             clip_val = getattr(ctx, 'clip_val{}'.format(identifier))
             if non_negative_only:
-                y = input.to(torch.float) / (level- 1) * clip_val
+                y = input.to(dtype=clip_val.dtype) / (level- 1) * clip_val
             else:
-                y = input.to(torch.float) / (level//2) * clip_val
+                y = input.to(dtype=clip_val.dtype) / (level//2) * clip_val
         return y
 
     @staticmethod
@@ -246,19 +263,17 @@ class Quant(object):
         else:
             clip_val = getattr(ctx, 'clip_val{}'.format(identifier))
             is_filtered = getattr(ctx, 'is_filtered{}'.format(identifier))
-            is_filtered = packbit.unpackbits_padded(is_filtered, dim=1).to(dtype=torch.bool)
+            is_filtered = packbit.unpackbits_padded(is_filtered, dim=0).to(dtype=torch.bool)
             grad_clip = grad_input.masked_select(is_filtered).sum().reshape(clip_val.shape)
-            grad_input.masked_fill_(not is_filtered, 0.0)
+            grad_input.masked_fill_(is_filtered, 0.0)
             setattr(ctx, 'is_filtered{}'.format(identifier), None)
             setattr(ctx, 'clip_val{}'.format(identifier), None)
-            
-        setattr(ctx, 'input{}'.format(identifier), None)
         return grad_clip
 
 class quantization(nn.Module, Quant):
-    def __init__(self, memory_saving=False, args=None, logger=None):
+    def __init__(self, memory_saving=False, args=None, logger=None, tag='fm'):
         super(quantization, self).__init__()
-        Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger)
+        Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger, tag=tag)
 
     def __repr__(self):
         return self.__str__()

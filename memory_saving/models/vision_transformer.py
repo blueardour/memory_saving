@@ -110,6 +110,7 @@ class Attention(nn.Module):
         self.scale = qk_scale or head_dim ** -0.5
 
         self.qkv = ms.Linear(dim, dim * 3, bias=qkv_bias)
+        self.softmax = ms.Softmax(dim=-1)
         self.attn_drop = nn.Dropout(attn_drop)
         self.proj = ms.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
@@ -122,7 +123,7 @@ class Attention(nn.Module):
         q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
 
         attn = self.mm1(q, k.transpose(-2, -1)) * self.scale
-        attn = attn.softmax(dim=-1)
+        attn = self.softmax(attn)
         attn = self.attn_drop(attn)
 
         x = self.mm2(attn, v).transpose(1, 2).reshape(B, N, C)

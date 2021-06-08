@@ -180,16 +180,33 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> layer_norm_backward_cuda(
 #endif
 }
 
+at::Tensor softmax_backward_cpu(
+    const at::Tensor& grad_output,
+    const at::Tensor& output,
+    int64_t dim,
+    const at::Tensor& self) {
+    return at::native::softmax_backward_cpu(grad_output, output, dim, self);
+}
+
+at::Tensor softmax_backward_cuda(
+    const at::Tensor& grad_output,
+    const at::Tensor& output,
+    int64_t dim,
+    const at::Tensor& self) {
+    return at::native::softmax_backward_cuda(grad_output, output, dim, self);
+}
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("conv2d_backward", &conv2d_backward, "2d convolution backward");
-    m.def("batch_norm_forward", &batch_norm_forward, "batch norm forward");
+    m.def("batch_norm_forward",  &batch_norm_forward,  "batch norm forward");
     m.def("batch_norm_backward", &batch_norm_backward, "batch norm backward");
-    m.def("gelu_backward_cpu", &gelu_backward_cpu, "gelu backward (cpu version)");
+    m.def("gelu_backward_cpu",  &gelu_backward_cpu,  "gelu backward (cpu version)");
     m.def("gelu_backward_cuda", &gelu_backward_cuda, "gelu backward (cuda version)");
-    m.def("layer_norm_forward_cpu", &layer_norm_forward_cpu, "layer norm forward (cpu version)");
+    m.def("layer_norm_forward_cpu",  &layer_norm_forward_cpu,  "layer norm forward (cpu version)");
     m.def("layer_norm_backward_cpu", &layer_norm_backward_cpu, "layer norm backward (cpu version)");
-    m.def("layer_norm_forward_cuda", &layer_norm_forward_cuda, "layer norm forward (cuda version)");
+    m.def("layer_norm_forward_cuda",  &layer_norm_forward_cuda,  "layer norm forward (cuda version)");
     m.def("layer_norm_backward_cuda", &layer_norm_backward_cuda, "layer norm backward (cuda version)");
+    m.def("softmax_backward_cpu",  &softmax_backward_cpu,  "softmax backward (cpu version)");
+    m.def("softmax_backward_cuda", &softmax_backward_cuda, "softmax backward (cuda version)");
 }
 

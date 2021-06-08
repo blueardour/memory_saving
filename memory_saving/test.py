@@ -69,27 +69,12 @@ def test(iteration=10, inplace=False):
 
     model = nn.Sequential(
             nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
-            ms.GELU(memory_saving=True),
-            #Flatten(),
-            #ms.Linear(64 * 56 * 56, 100),
+            ms.GELU(),
             ms.LayerNorm([64,56,56]),
+            ms.Softmax(dim=-1),
             #ms.BatchNorm2d(64),
-            #ms.Conv2d(64, 64, 3, bias=False),
-            #nn.ReLU(inplace),
-            #ms.cc.Conv2d(64, 64, 3, bias=False),
-            #nn.ReLU(inplace),
-            #ms.cc.Conv2d(64, 64, 3, bias=False),
-            #nn.BatchNorm2d(64),
-            #ms.ReLU(inplace),
-            #ms.Conv2d(64, 64, 3, bias=False),
-            #ms.ReLU(inplace),
             )
-    #model = Model(inplace)
-    #model = model.cuda()
 
-    #model = ms.LayerNorm([64,56,56], memory_saving=True)
-
-    print(model)
     for m in model.modules():
         if isinstance(m, nn.Conv2d):
             nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
@@ -97,16 +82,14 @@ def test(iteration=10, inplace=False):
     model1 = copy.deepcopy(model)
 
     for m in model.modules():
-        if hasattr(m, 'memory_saving'):
-            #print("module {} memory_saving: {}".format(type(m), m.memory_saving))
-            m.memory_saving = False
+        if hasattr(m, 'enable'):
+            m.enable = False
 
     for m in model1.modules():
-        if hasattr(m, 'memory_saving'):
-            #print("module {} memory_saving: {}".format(type(m), m.memory_saving))
-            m.memory_saving = True
+        if hasattr(m, 'enable'):
+            m.enable = True
         if hasattr(m, 'level'):
-            m.level = 256
+            m.level = 257
 
     model.train()
     model1.train()
