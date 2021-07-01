@@ -67,15 +67,17 @@ class Quant(object):
             
             self.logger.info("index({})-clip_val({})-level({})-stable({})-correlate({})-non_negative_only({})".format(
                 self.index, self.clip_val.item(), self.level, self.stable, self.correlate, self.non_negative_only))
-        self.items = ['index', 'tag', 'clip_val', 'level', 'stable', 'correlate', 'non_negative_only']
+        self.items = ['clip_val', 'level', 'stable', 'correlate', 'non_negative_only']
+        self.clip_val.requires_grad = self.enable
 
     def __str__(self):
         if hasattr(self, 'repr'):
             string = self.repr
+        if hasattr(self, 'string'):
+            string = self.string + string
+        string = string + "-index({})-tag({})".format(self.index, self.tag)
 
         if self.enable:
-            if hasattr(self, 'string'):
-                string = self.string + string
             for item in self.items:
                 if hasattr(self, item):
                     value = getattr(self, item)
@@ -184,6 +186,7 @@ class Quant(object):
                                     self.logger.info('update global_buffer (current length: {}), key: {}'.format(
                                         len(self.args.global_buffer), key))
 
+        self.clip_val.requires_grad = self.enable
         if not self.enable:
             return None
         else:
