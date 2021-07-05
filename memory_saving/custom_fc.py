@@ -60,10 +60,14 @@ class Linear(nn.Linear, custom_quant.Quant):
 
     def forward(self, x):
         if self.enable:
-            y = linear.apply(x, self.weight, self.bias, self.training, self.fp_forward, self.clip_val.abs(), self.level, self.non_negative_only)
+            if self.stable > self.iteration.item():
+                self.init_based_on_warmup(x)
+                y = F.linear(x, self.weight, self.bias)
+            else:
+                y = linear.apply(x, self.weight, self.bias, self.training, self.fp_forward, self.clip_val.abs(), self.level, \
+                    self.non_negative_only)
         else:
             y = F.linear(x, self.weight, self.bias)
-        #print('in Linear[{}] debug dtype'.format(self.index), x.dtype, self.weight.dtype, self.bias.dtype if self.bias is not None else None, self.clip_val.dtype, y.dtype)
         self.iteration.add_(1)
         return y
 

@@ -9,7 +9,8 @@ from . import packbit
 
 class layer_norm(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, normalized_shape, weight, bias, eps, training=False, fp_forward=False, clip_val=None, level=255, non_negative_only=True):
+    def forward(ctx, x, normalized_shape, weight, bias, eps, training=False, fp_forward=False, clip_val=None, level=255, \
+            non_negative_only=True):
         x = custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only)
         if torch.__version__  >= "1.8":
             if x.is_cuda:
@@ -82,9 +83,14 @@ class LayerNorm(nn.LayerNorm, custom_quant.Quant):
 
     def forward(self, x):
         if self.enable:
-            y = layer_norm.apply(x, self.normalized_shape, self.weight, self.bias, self.eps, \
+            if self.stable > self.iteration.item():
+                self.init_based_on_warmup(x)
+                y = F.layer_norm(x, self.normalized_shape, self.weight, self.bias, self.eps)
+            else:
+                y = layer_norm.apply(x, self.normalized_shape, self.weight, self.bias, self.eps, \
                     self.training, self.fp_forward, self.clip_val.abs(), self.level, self.non_negative_only)
         else:
             y = F.layer_norm(x, self.normalized_shape, self.weight, self.bias, self.eps)
+        self.iteration.add_(1)
         return y
 

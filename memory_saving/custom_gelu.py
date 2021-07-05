@@ -43,9 +43,14 @@ class GELU(nn.GELU, custom_quant.Quant):
 
     def forward(self, x):
         if self.enable:
-            y = gelu.apply(x, self.training, self.fp_forward, self.clip_val.abs(), self.level, self.non_negative_only)
+            if self.stable > self.iteration.item():
+                self.init_based_on_warmup(x)
+                y = F.gelu(x)
+            else:
+                y = gelu.apply(x, self.training, self.fp_forward, self.clip_val.abs(), self.level, self.non_negative_only)
         else:
             y = F.gelu(x)
+        self.iteration.add_(1)
         return y
 
 if __name__ == "__main__":

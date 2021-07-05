@@ -57,11 +57,18 @@ class MatMul(nn.Module):
 
     def forward(self, x1, x2):
         if self.quant1.enable and self.quant2.enable:
-            y = matmul.apply(x1, x2, self.training, \
+            if self.quant1.stable > self.quant1.iteration.item() and self.quant2.stable > self.quant2.iteration.item():
+                self.quant1.init_based_on_warmup(x1)
+                self.quant2.init_based_on_warmup(x2)
+                y = torch.matmul(x1, x2)
+            else:
+                y = matmul.apply(x1, x2, self.training, \
                 self.quant1.fp_forward, self.quant1.clip_val.abs(), self.quant1.level, self.quant1.non_negative_only, \
                 self.quant2.fp_forward, self.quant2.clip_val.abs(), self.quant2.level, self.quant2.non_negative_only)
         else:
             y = torch.matmul(x1, x2)
+        self.quant1.iteration.add_(1)
+        self.quant2.iteration.add_(1)
         return y
 
 
