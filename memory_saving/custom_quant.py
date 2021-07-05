@@ -20,7 +20,7 @@ class Quant(object):
         # quantizer
         self.iteration = nn.Parameter(torch.zeros(1), requires_grad=False)
         self.clip_val = nn.Parameter(torch.Tensor([1.0]))
-        self.level = 257
+        self.level = 0
         self.stable = -1
         self.correlate = 1.0
         self.non_negative_only = False
@@ -62,8 +62,8 @@ class Quant(object):
                 self.non_negative_only = self.non_negative_only and args.nno
             if hasattr(args, 'fm_half_range'):
                 self.non_negative_only = self.non_negative_only and args.fm_half_range
-            if self.level > 256:
-                self.level = 257
+            #if self.level > 256:
+            #    self.level = 257
             
             self.logger.info("index({})-clip_val({})-level({})-stable({})-correlate({})-non_negative_only({})".format(
                 self.index, self.clip_val.item(), self.level, self.stable, self.correlate, self.non_negative_only))
@@ -211,7 +211,7 @@ class Quant(object):
 
     @staticmethod
     def forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, identifier="_"):
-        if level > 256:
+        if level == 0:
             y = x
             if training:
                 setattr(ctx, 'input{}'.format(identifier), y)
@@ -248,7 +248,7 @@ class Quant(object):
         level = getattr(ctx, 'level{}'.format(identifier))
         non_negative_only = getattr(ctx, 'non_negative_only{}'.format(identifier))
         setattr(ctx, 'input{}'.format(identifier), None)
-        if level > 256:
+        if level == 0:
             y = input
         else:
             clip_val = getattr(ctx, 'clip_val{}'.format(identifier))
@@ -261,7 +261,7 @@ class Quant(object):
     @staticmethod
     def backward(ctx, grad_input, identifier="_"):
         level = getattr(ctx, 'level{}'.format(identifier))
-        if level > 256:
+        if level == 0:
             grad_clip = None
         else:
             clip_val = getattr(ctx, 'clip_val{}'.format(identifier))
