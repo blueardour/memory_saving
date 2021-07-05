@@ -211,6 +211,20 @@ class Quant(object):
 
     @staticmethod
     def forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, identifier="_"):
+        def save_for_backward(y, signed=True):
+            if level == 65536 and signed:
+                setattr(ctx, 'input{}'.format(identifier), y.to(torch.int16))
+            elif level == 256 and signed:
+                setattr(ctx, 'input{}'.format(identifier), y.to(torch.int8))
+            elif level == 256 and not signed:
+                setattr(ctx, 'input{}'.format(identifier), y.to(torch.uint8))
+            elif level == 16: # not verified
+                setattr(ctx, 'input{}'.format(identifier), packbit.packbits_padded(y, dim=0, mask=3))
+            elif level == 4:  # not verified
+                setattr(ctx, 'input{}'.format(identifier), packbit.packbits_padded(y, dim=0, mask=15))
+            else:
+                raise RuntimeError("un-supported quanitzation bit: {level}")
+
         if level == 0:
             y = x
             if training:
@@ -222,7 +236,7 @@ class Quant(object):
                 y = torch.round(y)
                 y = torch.clamp(y, min=0, max=level-1)
                 if training:
-                    setattr(ctx, 'input{}'.format(identifier), y.to(torch.int8))
+                    save_for_backward(y, signed=False)
                 y = y / (level-1) * clip_val
                 is_filtered = x >= clip_val
             else:
@@ -230,7 +244,7 @@ class Quant(object):
                 y = torch.round(y)
                 y = torch.clamp(y, min=-level//2, max=level-level//2-1)
                 if training:
-                    setattr(ctx, 'input{}'.format(identifier), y.to(torch.int8))
+                    save_for_backward(y, signed=True)
                 y = y / (level//2) * clip_val
                 is_filtered = (x >= (clip_val * (level-level//2-1) / (level//2))) | (x <= -clip_val)
             if training:
@@ -244,6 +258,17 @@ class Quant(object):
 
     @staticmethod
     def restore(ctx, identifier="_"):
+        def saved_tensors(input, level, dtype):
+            if level in [65536, 256]:
+                output = input.to(dtype=dtype)
+            elif level == 16:
+                output = packbit.unpackbits_padded(input, dim=0, mask=3).to(dtype=dtype)
+            elif level == 4:
+                output = packbit.unpackbits_padded(input, dim=0, mask=15).to(dtype=dtype)
+            else:
+                raise RuntimeError("un-supported quanitzation bit: {level}")
+            return output
+
         input = getattr(ctx, 'input{}'.format(identifier))
         level = getattr(ctx, 'level{}'.format(identifier))
         non_negative_only = getattr(ctx, 'non_negative_only{}'.format(identifier))
@@ -253,9 +278,9 @@ class Quant(object):
         else:
             clip_val = getattr(ctx, 'clip_val{}'.format(identifier))
             if non_negative_only:
-                y = input.to(dtype=clip_val.dtype) / (level- 1) * clip_val
+                y = saved_tensors(input, level, dtype=clip_val.dtype) / (level- 1) * clip_val
             else:
-                y = input.to(dtype=clip_val.dtype) / (level//2) * clip_val
+                y = saved_tensors(input, level, dtype=clip_val.dtype) / (level//2) * clip_val
         return y
 
     @staticmethod
