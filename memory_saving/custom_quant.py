@@ -26,10 +26,10 @@ class Quant(object):
         self.non_negative_only = False
         self.tag = tag
         self.index = -1
-        self.logger = logger
         self.args = args
         self.string = 'ms.'
         self.repr = super(type(self), self).__repr__()
+        self.logger = logger
 
         class logger_wrapper(object):
             def info(self, string):
@@ -44,6 +44,7 @@ class Quant(object):
                 else:
                     logger_root = args.logger_root + '.' if hasattr(args, 'logger_root') else ''
                     self.logger = logging.getLogger(logger_root + __name__)
+        self.verbose = self.logger.info
 
         if args is not None:
             if hasattr(args, 'fm_bit') and args.fm_bit is not None:
@@ -65,7 +66,7 @@ class Quant(object):
             #if self.level > 256:
             #    self.level = 257
             
-            self.logger.info("index({})-clip_val({})-level({})-stable({})-correlate({})-non_negative_only({})".format(
+            self.verbose("index({})-clip_val({})-level({})-stable({})-correlate({})-non_negative_only({})".format(
                 self.index, self.clip_val.item(), self.level, self.stable, self.correlate, self.non_negative_only))
         self.items = ['clip_val', 'level', 'stable', 'correlate', 'non_negative_only']
         self.clip_val.requires_grad = self.enable
@@ -106,7 +107,7 @@ class Quant(object):
                 self.clip_val.data = max_value + iteration * self.clip_val.data
                 self.clip_val.div_(iteration + 1)
                 if iteration == (self.stable - 1):
-                    self.logger.info('update %s clip_val for index %d to %r' % (self.tag, self.index, self.clip_val.item()))
+                    self.verbose('update %s clip_val for index %d to %r' % (self.tag, self.index, self.clip_val.item()))
 
     def update_quantization_parameter(self, **parameters):
         feedback = dict()
@@ -118,7 +119,7 @@ class Quant(object):
                 index = parameters['index'][self.tag]
         if index != self.index:
             self.index = index
-            self.logger.info('update %s_index %r' % (self.tag, self.index))
+            self.verbose('update %s_index %r' % (self.tag, self.index))
 
         if 'by_index' in parameters:
             by_index = parameters['by_index']
@@ -159,7 +160,7 @@ class Quant(object):
                                                     assert v > 1.9, "level_num should be at least 2"
                                                     scale = (v - 1) / (self.level_num.item() - 1)
                                                     self.clip_val.mul_(scale)
-                                                    self.logger.info('update {}_clip_val to {} for index {}'.format(
+                                                    self.verbose('update {}_clip_val to {} for index {}'.format(
                                                         self.tag, self.clip_val, self.index))
 
                                                     # remember to patch the momentum in SGD optimizer. set it to zero or multiple by scale
@@ -168,11 +169,11 @@ class Quant(object):
                                                     else:
                                                         feedback['reset_momentum_list'] = [self.clip_val]
                                         getattr(self, k).fill_(float(v))
-                                    self.logger.info('update {}_{} to {} for index {}'.format(
+                                    self.verbose('update {}_{} to {} for index {}'.format(
                                         self.tag, k, getattr(self, k, 'Non-Exist'), self.index))
                                 else:
                                     setattr(self, "{}".format(k), v)
-                                    self.logger.info('update {}_{} to {} for index {}'.format(
+                                    self.verbose('update {}_{} to {} for index {}'.format(
                                         self.tag, k, getattr(self, k, 'Non-Exist'), self.index))
                                 if self.enable:
                                     assert hasattr(self, 'iteration'), \
@@ -183,7 +184,7 @@ class Quant(object):
                                 if isinstance(getattr(self.args, k, None), dict) and hasattr(self, v) and self.enable:
                                     key = "{}-{}-{}".format(v, self.index, self.tag)
                                     self.args.global_buffer[key] = getattr(self, v)
-                                    self.logger.info('update global_buffer (current length: {}), key: {}'.format(
+                                    self.verbose('update global_buffer (current length: {}), key: {}'.format(
                                         len(self.args.global_buffer), key))
 
         self.clip_val.requires_grad = self.enable
@@ -200,7 +201,7 @@ class Quant(object):
                         quant_loss_function.append(nn.L1Loss())
                 if len(quant_loss_function) != 0:
                     self.quant_loss_function = quant_loss_function
-                    self.logger.info('update quant_loss_function: {} for layer(index:{}, tag:{})'.format(
+                    self.verbose('update quant_loss_function: {} for layer(index:{}, tag:{})'.format(
                         self.quant_loss_function, self.index, self.tag))
                 else:
                     self.quant_loss_function = 'none'

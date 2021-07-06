@@ -78,9 +78,15 @@ def read_policy(filename, section='init', debug=False, verbose=print):
 
     return policies
 
-def deploy_on_init(model, filename, verbose=print):
+def deploy_on_init(model, filename, verbose=print, override_verbose=False):
     if not hasattr(model, 'modules'):
         return
+
+    # update verbose function if override_verbose is True
+    if override_verbose:
+        for m in model.modules():
+            if hasattr(m, 'verbose') and callable(m.verbose):
+                m.verbose = verbose
 
     tags_count = { 'conv': 0, 'fc': 0, 'eltwise': 0, 'shuffle': 0, 'concat': 0, 'norm': 0,
                    'gelu': 0, 'layernorm': 0, 'matmul': 0, 'softmax': 0 }
