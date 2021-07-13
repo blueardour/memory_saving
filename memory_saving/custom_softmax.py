@@ -57,7 +57,7 @@ class Softmax(nn.Softmax):
 
     def forward(self, x):
         if self.quant1.enable and self.quant2.enable:
-            if self.stable > self.iteration.item():
+            if self.quant1.stable > self.quant1.iteration.item() and self.quant2.stable > self.quant2.iteration.item():
                 self.quant1.init_based_on_warmup(x)
                 y = F.softmax(x, self.dim)
                 self.quant2.init_based_on_warmup(y)
@@ -67,6 +67,8 @@ class Softmax(nn.Softmax):
                     self.quant2.fp_forward, self.quant2.clip_val.abs(), self.quant2.level, self.quant2.non_negative_only)
         else:
             y = F.softmax(x, self.dim)
+        self.quant1.iteration.add_(1)
+        self.quant2.iteration.add_(1)
         return y
 
 if __name__ == "__main__":
