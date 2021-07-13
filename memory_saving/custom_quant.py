@@ -21,8 +21,6 @@ class Quant(object):
         self.iteration = nn.Parameter(torch.zeros(1), requires_grad=False)
         self.clip_val = nn.Parameter(torch.Tensor([1.0]))
         self.level = 0
-        self.stable = -1
-        self.correlate = 1.0
         self.non_negative_only = False
         self.tag = tag
         self.index = -1
@@ -30,6 +28,10 @@ class Quant(object):
         self.string = 'ms.'
         self.repr = super(type(self), self).__repr__()
         self.logger = logger
+        self.stable = -1
+        self.correlate = 1.0
+        self.warmup_choice = 'MA' # or 'EMA'
+        self.ema_decay = 0.9999
 
         class logger_wrapper(object):
             def info(self, string):
@@ -68,7 +70,7 @@ class Quant(object):
             
             self.verbose("index({})-clip_val({})-level({})-stable({})-correlate({})-non_negative_only({})".format(
                 self.index, self.clip_val.item(), self.level, self.stable, self.correlate, self.non_negative_only))
-        self.items = ['clip_val', 'level', 'stable', 'correlate', 'non_negative_only']
+        self.items = ['clip_val', 'level', 'stable', 'correlate', 'non_negative_only', 'warmup_choice', 'ema_decay']
         self.clip_val.requires_grad = self.enable
 
     def __str__(self):
@@ -100,12 +102,17 @@ class Quant(object):
 
         iteration = self.iteration.item()
         with torch.no_grad():
-            max_value = data.abs().max().item()
             if hasattr(self, 'clip_val') and isinstance(self.clip_val, torch.Tensor):
+                max_value = data.abs().max().item()
                 if self.correlate > 0:
                     max_value = max_value * self.correlate
-                self.clip_val.data = max_value + iteration * self.clip_val.data
-                self.clip_val.div_(iteration + 1)
+
+                if self.warmup_choice == 'MA':
+                    self.clip_val.data = max_value + iteration * self.clip_val.data
+                    self.clip_val.div_(iteration + 1)
+                elif self.warmup_choice == 'EMA':
+                    pass
+
                 if iteration == (self.stable - 1):
                     self.verbose('update %s clip_val for index %d to %r' % (self.tag, self.index, self.clip_val.item()))
 
