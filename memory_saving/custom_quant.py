@@ -97,7 +97,7 @@ class Quant(object):
         return string
 
     def init_based_on_warmup(self, data=None):
-        if not self.enable and data is None:
+        if (not self.enable and data is None) or not self.training:
             return
 
         iteration = self.iteration.item()
@@ -111,10 +111,14 @@ class Quant(object):
                     self.clip_val.data = max_value + iteration * self.clip_val.data
                     self.clip_val.div_(iteration + 1)
                 elif self.warmup_choice == 'EMA':
-                    pass
+                    if iteration == 0:
+                        self.clip_val.fill_(data.abs().max())
+                    else:
+                        self.clip_val.sub_((1 - self.ema_decay) * (self.clip_val - data.abs().max()))
 
                 if iteration == (self.stable - 1):
                     self.verbose('update %s clip_val for index %d to %r' % (self.tag, self.index, self.clip_val.item()))
+        self.iteration.add_(1)
 
     def update_quantization_parameter(self, **parameters):
         feedback = dict()

@@ -67,8 +67,8 @@ class Softmax(nn.Softmax):
                     self.quant2.fp_forward, self.quant2.clip_val.abs(), self.quant2.level, self.quant2.non_negative_only)
         else:
             y = F.softmax(x, self.dim)
-        self.quant1.iteration.add_(1)
-        self.quant2.iteration.add_(1)
+        # self.quant1.iteration.add_(1)
+        # self.quant2.iteration.add_(1)
         return y
 
 if __name__ == "__main__":

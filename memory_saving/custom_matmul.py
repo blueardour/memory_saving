@@ -67,8 +67,8 @@ class MatMul(nn.Module):
                 self.quant2.fp_forward, self.quant2.clip_val.abs(), self.quant2.level, self.quant2.non_negative_only)
         else:
             y = torch.matmul(x1, x2)
-        self.quant1.iteration.add_(1)
-        self.quant2.iteration.add_(1)
+        # self.quant1.iteration.add_(1)
+        # self.quant2.iteration.add_(1)
         return y
 
 

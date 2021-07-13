@@ -50,7 +50,7 @@ class GELU(nn.GELU, custom_quant.Quant):
                 y = gelu.apply(x, self.training, self.fp_forward, self.clip_val.abs(), self.level, self.non_negative_only)
         else:
             y = F.gelu(x)
-        self.iteration.add_(1)
+        # self.iteration.add_(1)
         return y
 
 if __name__ == "__main__":

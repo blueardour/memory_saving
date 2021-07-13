@@ -68,7 +68,7 @@ class Linear(nn.Linear, custom_quant.Quant):
                     self.non_negative_only)
         else:
             y = F.linear(x, self.weight, self.bias)
-        self.iteration.add_(1)
+        # self.iteration.add_(1)
         return y
 
 if __name__ == "__main__":
