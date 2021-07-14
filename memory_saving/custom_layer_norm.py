@@ -88,7 +88,7 @@ class LayerNorm(nn.LayerNorm, custom_quant.Quant):
                 y = F.layer_norm(x, self.normalized_shape, self.weight, self.bias, self.eps)
             else:
                 y = layer_norm.apply(x, self.normalized_shape, self.weight, self.bias, self.eps, \
-                    self.training, self.fp_forward, self.clip_val.abs(), self.level, self.non_negative_only, self.iteration, self.ema_decay)
+                    self.training, self.fp_forward, self.clip_val, self.level, self.non_negative_only, self.iteration, self.ema_decay)
         else:
             y = F.layer_norm(x, self.normalized_shape, self.weight, self.bias, self.eps)
         return y

@@ -47,7 +47,7 @@ class GELU(nn.GELU, custom_quant.Quant):
                 self.init_based_on_warmup(x)
                 y = F.gelu(x)
             else:
-                y = gelu.apply(x, self.training, self.fp_forward, self.clip_val.abs(), self.level, self.non_negative_only, self.iteration, self.ema_decay)
+                y = gelu.apply(x, self.training, self.fp_forward, self.clip_val, self.level, self.non_negative_only, self.iteration, self.ema_decay)
         else:
             y = F.gelu(x)
         return y

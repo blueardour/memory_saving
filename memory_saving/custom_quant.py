@@ -253,7 +253,7 @@ class Quant(object):
             if training:
                 update_clip_val(x.detach(), clip_val, iteration, ema_decay)
 
-            clip_val = clip_val.to(dtype=x.dtype)
+            clip_val = clip_val.abs().to(dtype=x.dtype)
             if non_negative_only:
                 y = x / clip_val * (level-1)
                 y = torch.round(y)

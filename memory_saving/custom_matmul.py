@@ -63,8 +63,8 @@ class MatMul(nn.Module):
                 y = torch.matmul(x1, x2)
             else:
                 y = matmul.apply(x1, x2, self.training, \
-                self.quant1.fp_forward, self.quant1.clip_val.abs(), self.quant1.level, self.quant1.non_negative_only, self.quant1.iteration, self.quant1.ema_decay,\
-                self.quant2.fp_forward, self.quant2.clip_val.abs(), self.quant2.level, self.quant2.non_negative_only, self.quant2.iteration, self.quant2.ema_decay,)
+                self.quant1.fp_forward, self.quant1.clip_val, self.quant1.level, self.quant1.non_negative_only, self.quant1.iteration, self.quant1.ema_decay,\
+                self.quant2.fp_forward, self.quant2.clip_val, self.quant2.level, self.quant2.non_negative_only, self.quant2.iteration, self.quant2.ema_decay,)
         else:
             y = torch.matmul(x1, x2)
         return y

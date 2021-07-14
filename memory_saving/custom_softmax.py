@@ -63,8 +63,8 @@ class Softmax(nn.Softmax):
                 self.quant2.init_based_on_warmup(y)
             else:
                 y = softmax.apply(x, self.dim, self.training, \
-                    self.quant1.fp_forward, self.quant1.clip_val.abs(), self.quant1.level, self.quant1.non_negative_only, self.quant1.iteration, self.quant1.ema_decay, \
-                    self.quant2.fp_forward, self.quant2.clip_val.abs(), self.quant2.level, self.quant2.non_negative_only, self.quant2.iteration, self.quant2.ema_decay,)
+                    self.quant1.fp_forward, self.quant1.clip_val, self.quant1.level, self.quant1.non_negative_only, self.quant1.iteration, self.quant1.ema_decay, \
+                    self.quant2.fp_forward, self.quant2.clip_val, self.quant2.level, self.quant2.non_negative_only, self.quant2.iteration, self.quant2.ema_decay,)
         else:
             y = F.softmax(x, self.dim)
         return y
