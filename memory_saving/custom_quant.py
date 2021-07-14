@@ -32,6 +32,7 @@ class Quant(object):
         self.correlate = 1.0
         self.warmup_choice = 'MA' # or 'EMA'
         self.ema_decay = 0.9999
+        self.requires_grad = False
 
         class logger_wrapper(object):
             def info(self, string):
@@ -68,10 +69,10 @@ class Quant(object):
             #if self.level > 256:
             #    self.level = 257
             
-            self.verbose("index({})-clip_val({})-level({})-stable({})-correlate({})-non_negative_only({})".format(
-                self.index, self.clip_val.item(), self.level, self.stable, self.correlate, self.non_negative_only))
-        self.items = ['clip_val', 'level', 'stable', 'correlate', 'non_negative_only', 'warmup_choice', 'ema_decay']
-        self.clip_val.requires_grad = self.enable
+            self.verbose("index({})-clip_val({})-level({})-stable({})-correlate({})-non_negative_only({})-requires_grad({})".format(
+                self.index, self.clip_val.item(), self.level, self.stable, self.correlate, self.non_negative_only, self.requires_grad))
+        self.items = ['clip_val', 'level', 'stable', 'correlate', 'non_negative_only', 'warmup_choice', 'ema_decay', 'requires_grad']
+        self.clip_val.requires_grad = self.enable and self.requires_grad
 
     def __str__(self):
         if hasattr(self, 'repr'):
@@ -198,7 +199,7 @@ class Quant(object):
                                     self.verbose('update global_buffer (current length: {}), key: {}'.format(
                                         len(self.args.global_buffer), key))
 
-        self.clip_val.requires_grad = self.enable
+        self.clip_val.requires_grad = self.enable and self.requires_grad
         if not self.enable:
             return None
         else:
@@ -222,7 +223,14 @@ class Quant(object):
             return feedback
 
     @staticmethod
-    def forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, identifier="_"):
+    def forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, identifier="_"):
+        def update_clip_val(input, clip_val, iteration, ema_decay, reduce_fn=lambda x: x.abs().max()):
+            if iteration == 0:
+                clip_val.fill_(reduce_fn(input))
+            else:
+                clip_val.sub_((1 - ema_decay) * (clip_val - reduce_fn(input)))
+            iteration.add_(1)
+
         def save_for_backward(y, signed=True):
             if level == 65536 and signed:
                 setattr(ctx, 'input{}'.format(identifier), y.to(torch.int16))
@@ -242,6 +250,9 @@ class Quant(object):
             if training:
                 setattr(ctx, 'input{}'.format(identifier), y)
         else:
+            if training:
+                update_clip_val(x.detach(), clip_val, iteration, ema_decay)
+
             clip_val = clip_val.to(dtype=x.dtype)
             if non_negative_only:
                 y = x / clip_val * (level-1)

@@ -10,8 +10,8 @@ from . import packbit
 class layer_norm(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, normalized_shape, weight, bias, eps, training=False, fp_forward=False, clip_val=None, level=255, \
-            non_negative_only=True):
-        x = custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only)
+            non_negative_only=True, iteration=None, ema_decay=None):
+        x = custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay)
         if torch.__version__  >= "1.8":
             if x.is_cuda:
                 y, mean, rstd = native.layer_norm_forward_cuda(x, normalized_shape, weight, bias, eps)
@@ -69,7 +69,7 @@ class layer_norm(torch.autograd.Function):
         if ctx.needs_input_grad[7] and grad_input is not None:
             grad_clip = custom_quant.Quant.backward(ctx, grad_input)
 
-        return grad_input, None, grad_weight, grad_bias, None, None, None, grad_clip, None, None
+        return grad_input, None, grad_weight, grad_bias, None, None, None, grad_clip, None, None, None, None
 
 class LayerNorm(nn.LayerNorm, custom_quant.Quant):
     def __init__(self, normalized_shape, eps=1e-05, elementwise_affine=True, \
@@ -88,9 +88,8 @@ class LayerNorm(nn.LayerNorm, custom_quant.Quant):
                 y = F.layer_norm(x, self.normalized_shape, self.weight, self.bias, self.eps)
             else:
                 y = layer_norm.apply(x, self.normalized_shape, self.weight, self.bias, self.eps, \
-                    self.training, self.fp_forward, self.clip_val.abs(), self.level, self.non_negative_only)
+                    self.training, self.fp_forward, self.clip_val.abs(), self.level, self.non_negative_only, self.iteration, self.ema_decay)
         else:
             y = F.layer_norm(x, self.normalized_shape, self.weight, self.bias, self.eps)
-        # self.iteration.add_(1)
         return y
 

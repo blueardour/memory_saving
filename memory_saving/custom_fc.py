@@ -17,9 +17,9 @@ else:
     
 class linear(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, weight, bias=None, training=True, fp_forward=False, clip_val=None, level=256, non_negative_only=True):
+    def forward(ctx, x, weight, bias=None, training=True, fp_forward=False, clip_val=None, level=256, non_negative_only=True, iteration=None, ema_decay=None):
 
-        input = custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only)
+        input = custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay)
         ctx.save_for_backward(weight, bias)
 
         output = input.matmul(weight.t())
@@ -46,7 +46,7 @@ class linear(torch.autograd.Function):
         if ctx.needs_input_grad[0] and grad_input is not None:
             grad_clip = custom_quant.Quant.backward(ctx, grad_input)
 
-        return grad_input, grad_weight, grad_bias, None, None, grad_clip, None, None
+        return grad_input, grad_weight, grad_bias, None, None, grad_clip, None, None, None, None
 
 class Linear(nn.Linear, custom_quant.Quant):
     def __init__(self, in_features, out_features, bias=True, \
@@ -64,11 +64,10 @@ class Linear(nn.Linear, custom_quant.Quant):
                 self.init_based_on_warmup(x)
                 y = F.linear(x, self.weight, self.bias)
             else:
-                y = linear.apply(x, self.weight, self.bias, self.training, self.fp_forward, self.clip_val.abs(), self.level, \
-                    self.non_negative_only)
+                y = linear.apply(x, self.weight, self.bias, self.training, self.fp_forward, self.clip_val, self.level, \
+                    self.non_negative_only, self.iteration, self.ema_decay)
         else:
             y = F.linear(x, self.weight, self.bias)
-        # self.iteration.add_(1)
         return y
 
 if __name__ == "__main__":

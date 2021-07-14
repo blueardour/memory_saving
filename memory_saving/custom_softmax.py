@@ -15,12 +15,12 @@ else:
 class softmax(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, dim, training=False, \
-            fp_forward1=False, clip_val1=None, level1=256, non_negative_only1=True, \
-            fp_forward2=False, clip_val2=None, level2=256, non_negative_only2=True):
+            fp_forward1=False, clip_val1=None, level1=256, non_negative_only1=True, iteration1=None, ema_decay1=None, \
+            fp_forward2=False, clip_val2=None, level2=256, non_negative_only2=True, iteration2=None, ema_decay2=None):
 
-        x = custom_quant.Quant.forward(ctx, x, training, fp_forward1, clip_val1, level1, non_negative_only1, '_1')
+        x = custom_quant.Quant.forward(ctx, x, training, fp_forward1, clip_val1, level1, non_negative_only1, iteration1, ema_decay1, '_1')
         y = F.softmax(x, dim)
-        y = custom_quant.Quant.forward(ctx, y, training, fp_forward2, clip_val2, level2, non_negative_only2, '_2')
+        y = custom_quant.Quant.forward(ctx, y, training, fp_forward2, clip_val2, level2, non_negative_only2, iteration2, ema_decay2,  '_2')
         ctx.dim = dim
         return y
 
@@ -42,7 +42,7 @@ class softmax(torch.autograd.Function):
         if ctx.needs_input_grad[4] and grad_input is not None:
             grad_clip1 = custom_quant.Quant.backward(ctx, grad_input, '_1')
 
-        return grad_input, None, None, None, grad_clip1, None, None, None, grad_clip2, None, None
+        return grad_input, None, None, None, grad_clip1, None, None, None, None, None,  grad_clip2, None, None, None, None
 
 class Softmax(nn.Softmax):
     def __init__(self, dim=None, memory_saving=False, args=None, logger=None):
@@ -63,12 +63,10 @@ class Softmax(nn.Softmax):
                 self.quant2.init_based_on_warmup(y)
             else:
                 y = softmax.apply(x, self.dim, self.training, \
-                    self.quant1.fp_forward, self.quant1.clip_val.abs(), self.quant1.level, self.quant1.non_negative_only, \
-                    self.quant2.fp_forward, self.quant2.clip_val.abs(), self.quant2.level, self.quant2.non_negative_only)
+                    self.quant1.fp_forward, self.quant1.clip_val.abs(), self.quant1.level, self.quant1.non_negative_only, self.quant1.iteration, self.quant1.ema_decay, \
+                    self.quant2.fp_forward, self.quant2.clip_val.abs(), self.quant2.level, self.quant2.non_negative_only, self.quant2.iteration, self.quant2.ema_decay,)
         else:
             y = F.softmax(x, self.dim)
-        # self.quant1.iteration.add_(1)
-        # self.quant2.iteration.add_(1)
         return y
 
 if __name__ == "__main__":
