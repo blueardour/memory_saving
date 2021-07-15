@@ -250,7 +250,7 @@ class Quant(object):
             if training:
                 setattr(ctx, 'input{}'.format(identifier), y)
         else:
-            if training:
+            if training and not clip_val.requires_grad:
                 update_clip_val(x.detach(), clip_val, iteration, ema_decay)
 
             clip_val = clip_val.abs().to(dtype=x.dtype)
