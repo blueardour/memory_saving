@@ -31,7 +31,7 @@ class softmax(torch.autograd.Function):
         x = custom_quant.Quant.restore(ctx, '_1')
         y = custom_quant.Quant.restore(ctx, '_2')
 
-        if ctx.needs_input_grad[8] and grad_output is not None:
+        if ctx.needs_input_grad[10] and grad_output is not None:
             grad_clip2 = custom_quant.Quant.backward(ctx, grad_output, '_2')
 
         if x.is_cuda:
