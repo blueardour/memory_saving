@@ -59,16 +59,31 @@ class Linear(nn.Linear, custom_quant.Quant):
         return self.__str__()
 
     def forward(self, x):
+        if self.init_phase:
+            assert self.training == False
+            self.init_base_on_search(x)
+            y = F.linear(x, self.weight, self.bias)
+            return y
+
         if self.enable:
-            if self.stable > self.iteration.item():
-                self.init_based_on_warmup(x)
-                y = F.linear(x, self.weight, self.bias)
-            else:
-                y = linear.apply(x, self.weight, self.bias, self.training, self.fp_forward, self.clip_val, self.level, \
-                    self.non_negative_only, self.iteration, self.ema_decay)
+            y = linear.apply(x, self.weight, self.bias, self.training, self.fp_forward, self.clip_val, self.level,
+                             self.non_negative_only, self.iteration, self.ema_decay)
         else:
             y = F.linear(x, self.weight, self.bias)
         return y
+
+        # Previous 'warmup' can not save memory when training for the first few iterations
+        #
+        # if self.enable:
+        #     if self.stable > self.iteration.item():
+        #         self.init_based_on_warmup(x)
+        #         y = F.linear(x, self.weight, self.bias)
+        #     else:
+        #         y = linear.apply(x, self.weight, self.bias, self.training, self.fp_forward, self.clip_val, self.level, \
+        #             self.non_negative_only, self.iteration, self.ema_decay)
+        # else:
+        #     y = F.linear(x, self.weight, self.bias)
+        # return y
 
 if __name__ == "__main__":
     model = Linear(100, 100)

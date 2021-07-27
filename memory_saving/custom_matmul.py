@@ -56,18 +56,36 @@ class MatMul(nn.Module):
         self.quant2.update_quantization_parameter(**parameters)
 
     def forward(self, x1, x2):
+        if self.quant1.init_phase and self.quant2.init_phase:
+            assert self.training == False
+            self.quant1.init_base_on_search(x1)
+            self.quant2.init_base_on_search(x2)
+            y = torch.matmul(x1, x2)
+            return y
+
         if self.quant1.enable and self.quant2.enable:
-            if self.quant1.stable > self.quant1.iteration.item() and self.quant2.stable > self.quant2.iteration.item():
-                self.quant1.init_based_on_warmup(x1)
-                self.quant2.init_based_on_warmup(x2)
-                y = torch.matmul(x1, x2)
-            else:
-                y = matmul.apply(x1, x2, self.training, \
-                self.quant1.fp_forward, self.quant1.clip_val, self.quant1.level, self.quant1.non_negative_only, self.quant1.iteration, self.quant1.ema_decay,\
-                self.quant2.fp_forward, self.quant2.clip_val, self.quant2.level, self.quant2.non_negative_only, self.quant2.iteration, self.quant2.ema_decay,)
+            y = matmul.apply(x1, x2, self.training, \
+                             self.quant1.fp_forward, self.quant1.clip_val, self.quant1.level,
+                             self.quant1.non_negative_only, self.quant1.iteration, self.quant1.ema_decay,
+                             self.quant2.fp_forward, self.quant2.clip_val, self.quant2.level,
+                             self.quant2.non_negative_only, self.quant2.iteration, self.quant2.ema_decay,)
         else:
             y = torch.matmul(x1, x2)
         return y
+
+    # def forward(self, x1, x2):
+    #     if self.quant1.enable and self.quant2.enable:
+    #         if self.quant1.stable > self.quant1.iteration.item() and self.quant2.stable > self.quant2.iteration.item():
+    #             self.quant1.init_based_on_warmup(x1)
+    #             self.quant2.init_based_on_warmup(x2)
+    #             y = torch.matmul(x1, x2)
+    #         else:
+    #             y = matmul.apply(x1, x2, self.training, \
+    #             self.quant1.fp_forward, self.quant1.clip_val, self.quant1.level, self.quant1.non_negative_only, self.quant1.iteration, self.quant1.ema_decay,\
+    #             self.quant2.fp_forward, self.quant2.clip_val, self.quant2.level, self.quant2.non_negative_only, self.quant2.iteration, self.quant2.ema_decay,)
+    #     else:
+    #         y = torch.matmul(x1, x2)
+    #     return y
 
 
 if __name__ == "__main__":

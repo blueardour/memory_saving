@@ -81,15 +81,31 @@ class LayerNorm(nn.LayerNorm, custom_quant.Quant):
     def __repr__(self):
         return self.__str__()
 
+
     def forward(self, x):
+        if self.init_phase:
+            assert self.training == False
+            self.init_base_on_search(x)
+            y = F.layer_norm(x, self.normalized_shape, self.weight, self.bias, self.eps)
+            return y
+
         if self.enable:
-            if self.stable > self.iteration.item():
-                self.init_based_on_warmup(x)
-                y = F.layer_norm(x, self.normalized_shape, self.weight, self.bias, self.eps)
-            else:
-                y = layer_norm.apply(x, self.normalized_shape, self.weight, self.bias, self.eps, \
-                    self.training, self.fp_forward, self.clip_val, self.level, self.non_negative_only, self.iteration, self.ema_decay)
+            y = layer_norm.apply(x, self.normalized_shape, self.weight, self.bias, self.eps, \
+                                 self.training, self.fp_forward, self.clip_val, self.level, self.non_negative_only,
+                                 self.iteration, self.ema_decay)
         else:
             y = F.layer_norm(x, self.normalized_shape, self.weight, self.bias, self.eps)
         return y
+
+    # def forward(self, x):
+    #     if self.enable:
+    #         if self.stable > self.iteration.item():
+    #             self.init_based_on_warmup(x)
+    #             y = F.layer_norm(x, self.normalized_shape, self.weight, self.bias, self.eps)
+    #         else:
+    #             y = layer_norm.apply(x, self.normalized_shape, self.weight, self.bias, self.eps, \
+    #                 self.training, self.fp_forward, self.clip_val, self.level, self.non_negative_only, self.iteration, self.ema_decay)
+    #     else:
+    #         y = F.layer_norm(x, self.normalized_shape, self.weight, self.bias, self.eps)
+    #     return y
 

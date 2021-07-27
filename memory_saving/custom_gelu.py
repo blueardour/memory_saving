@@ -42,15 +42,29 @@ class GELU(nn.GELU, custom_quant.Quant):
         return self.__str__()
 
     def forward(self, x):
+        if self.init_phase:
+            assert self.training == False
+            self.init_base_on_search(x)
+            y = F.gelu(x)
+            return y
+
         if self.enable:
-            if self.stable > self.iteration.item():
-                self.init_based_on_warmup(x)
-                y = F.gelu(x)
-            else:
-                y = gelu.apply(x, self.training, self.fp_forward, self.clip_val, self.level, self.non_negative_only, self.iteration, self.ema_decay)
+            y = gelu.apply(x, self.training, self.fp_forward, self.clip_val, self.level, self.non_negative_only,
+                           self.iteration, self.ema_decay)
         else:
             y = F.gelu(x)
         return y
+
+    # def forward(self, x):
+    #     if self.enable:
+    #         if self.stable > self.iteration.item():
+    #             self.init_based_on_warmup(x)
+    #             y = F.gelu(x)
+    #         else:
+    #             y = gelu.apply(x, self.training, self.fp_forward, self.clip_val, self.level, self.non_negative_only, self.iteration, self.ema_decay)
+    #     else:
+    #         y = F.gelu(x)
+    #     return y
 
 if __name__ == "__main__":
     model = GELU()

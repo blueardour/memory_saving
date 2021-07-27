@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -9,6 +11,7 @@ if 'memory_saving' not in __name__:
 else:
     from . import packbit
     from . import native
+    from .clip import find_clip_aciq, find_clip_entropy, find_clip_mmse
 import pydevd
 
 
@@ -34,6 +37,8 @@ class Quant(object):
         self.warmup_choice = 'MA'  # or 'EMA'
         self.ema_decay = 0.9999
         self.requires_grad = False
+        self.init_choice = 'mse'  # or 'entropy', 'mse'
+        self.init_phase = True
 
         class logger_wrapper(object):
             def info(self, string):
@@ -71,11 +76,11 @@ class Quant(object):
             #    self.level = 257
 
             self.verbose(
-                "index({})-clip_val({})-level({})-stable({})-correlate({})-non_negative_only({})-requires_grad({})".format(
+                "index({})-clip_val({})-level({})-stable({})-correlate({})-non_negative_only({})-requires_grad({})-init_choice({})".format(
                     self.index, self.clip_val.item(), self.level, self.stable, self.correlate, self.non_negative_only,
-                    self.requires_grad))
+                    self.requires_grad, self.init_choice))
         self.items = ['clip_val', 'level', 'stable', 'correlate', 'non_negative_only', 'warmup_choice', 'ema_decay',
-                      'requires_grad']
+                      'requires_grad', 'init_choice']
         self.clip_val.requires_grad = self.enable and self.requires_grad
 
     def __str__(self):
@@ -124,6 +129,20 @@ class Quant(object):
                 if iteration == (self.stable - 1):
                     self.verbose('update %s clip_val for index %d to %r' % (self.tag, self.index, self.clip_val.item()))
         self.iteration.add_(1)
+
+    def init_base_on_search(self, data=None):
+
+        if self.init_choice == 'aciq':
+            alpha_best, max_abs = find_clip_aciq(data.flatten(), int(math.log(self.level, 2)))
+        elif self.init_choice == 'mse':
+            alpha_best, max_abs = find_clip_mmse(data.flatten(), int(math.log(self.level, 2)))
+        elif self.init_choice == 'entropy':
+            alpha_best, max_abs = find_clip_entropy(data.flatten(), int(math.log(self.level, 2)))
+        else:
+            assert 1 == 0, "init choice not implemented"
+        with torch.no_grad():
+            self.clip_val.fill_(alpha_best)
+            self.verbose('update %s clip_val for index %d to %5.4f / %5.4f' % (self.tag, self.index, alpha_best, max_abs))
 
     def update_quantization_parameter(self, **parameters):
         feedback = dict()
@@ -293,6 +312,7 @@ class Quant(object):
 
     @staticmethod
     def restore(ctx, identifier="_"):
+        # pydevd.settrace(suspend=False, trace_only_current_thread=True)
         def saved_tensors(input, level, dtype):
             if level in [65536, 256]:
                 output = input.to(dtype=dtype)
