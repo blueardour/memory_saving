@@ -39,7 +39,7 @@ class matmul(torch.autograd.Function):
 
         if ctx.needs_input_grad[4] and grad_input1 is not None:
             grad_clip1 = custom_quant.Quant.backward(ctx, grad_input1, '_1')
-        if ctx.needs_input_grad[8] and grad_input2 is not None:
+        if ctx.needs_input_grad[10] and grad_input2 is not None:
             grad_clip2 = custom_quant.Quant.backward(ctx, grad_input2, '_2')
 
         return grad_input1, grad_input2, None, None, grad_clip1, None, None,None, None, None, grad_clip2, None, None, None, None

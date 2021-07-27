@@ -42,3 +42,4 @@ convert_onnx.sh
 # config
 memory.config
 config.*
+.idea/
