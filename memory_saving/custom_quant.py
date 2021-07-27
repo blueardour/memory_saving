@@ -131,7 +131,8 @@ class Quant(object):
         self.iteration.add_(1)
 
     def init_base_on_search(self, data=None):
-
+        if self.level == 0:
+            return
         if self.init_choice == 'aciq':
             alpha_best, max_abs = find_clip_aciq(data.flatten(), int(math.log(self.level, 2)))
         elif self.init_choice == 'mse':
