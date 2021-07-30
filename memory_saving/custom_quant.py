@@ -326,7 +326,6 @@ class Quant(object):
                 noise = torch.rand(x.size(), device=x.device) - 0.5
             else:
                 noise = torch.zeros_like(x, device=x.device)
-            noise = torch.rand(x.size(), device=x.device) - 0.5
 
             if non_negative_only:
                 y = x / clip_val * (level - 1)
