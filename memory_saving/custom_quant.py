@@ -82,6 +82,7 @@ class Quant(object):
         self.requires_grad = False
         self.init_choice = 'mse'  # or 'entropy', 'mse'
         self.init_phase = False
+        self.stochastic_round = False
 
         class logger_wrapper(object):
             def info(self, string):
@@ -119,11 +120,11 @@ class Quant(object):
             #    self.level = 257
 
             self.verbose(
-                "index({})-clip_val({})-level({})-stable({})-correlate({})-non_negative_only({})-requires_grad({})-init_choice({})-groups({})".format(
-                    self.index, self.clip_val.tolist(), self.level, self.stable, self.correlate, self.non_negative_only,
-                    self.requires_grad, self.init_choice, self.groups))
+                "index({})-clip_val({})-level({})-non_negative_only({})-groups({})-stochastic_round({})".format(
+                    self.index, self.clip_val.tolist(), self.level, self.non_negative_only,
+                    self.groups, self.stochastic_round))
         self.items = ['clip_val', 'level', 'stable', 'correlate', 'non_negative_only', 'warmup_choice', 'ema_decay',
-                      'requires_grad', 'init_choice', 'groups']
+                      'requires_grad', 'init_choice', 'groups', 'stochastic_round']
         self.clip_val.requires_grad = self.enable and self.requires_grad
 
     def __str__(self):
@@ -291,7 +292,7 @@ class Quant(object):
             return feedback
 
     @staticmethod
-    def forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups, identifier="_"):
+    def forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups, stochastic_round, identifier="_"):
 
         def save_for_backward(y, signed=True):
             if level == 65536 and signed:
@@ -320,9 +321,16 @@ class Quant(object):
                 update_clip_val(x.detach(), clip_val, iteration, ema_decay)
 
             clip_val = clip_val.abs().to(dtype=x.dtype)
+
+            if stochastic_round:
+                noise = torch.rand(x.size(), device=x.device) - 0.5
+            else:
+                noise = torch.zeros_like(x, device=x.device)
+            noise = torch.rand(x.size(), device=x.device) - 0.5
+
             if non_negative_only:
                 y = x / clip_val * (level - 1)
-                y = torch.round(y)
+                y = torch.round(y + noise)
                 y = torch.clamp(y, min=0, max=level - 1)
                 if training:
                     save_for_backward(y, signed=False)
@@ -331,7 +339,7 @@ class Quant(object):
                 # print(f'quant error = {(y-x).abs().sum()}')
             else:
                 y = x / clip_val * (level // 2)
-                y = torch.round(y)
+                y = torch.round(y + noise)
                 y = torch.clamp(y, min=-level // 2, max=level - level // 2 - 1)
                 if training:
                     save_for_backward(y, signed=True)
@@ -339,6 +347,8 @@ class Quant(object):
                 # max_clipped = x >= (clip_val * (level - level // 2 - 1) / (level // 2))
                 # min_clipped = x <= -clip_val
                 # print(f'quant error = {(y - x).abs().sum()}')
+
+
             if training:
                 # setattr(ctx, 'max_clipped{}'.format(identifier), packbit.packbits_padded(max_clipped, dim=0))
                 # if not non_negative_only:

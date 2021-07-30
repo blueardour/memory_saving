@@ -17,11 +17,11 @@ else:
 class matmul(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input1, input2, training=True, \
-            fp_forward1=False, clip_val1=None, level1=256, non_negative_only1=True, iteration1=None, ema_decay1=None, groups1=None, \
-            fp_forward2=False, clip_val2=None, level2=256, non_negative_only2=True, iteration2=None, ema_decay2=None, groups2=None):
+            fp_forward1=False, clip_val1=None, level1=256, non_negative_only1=True, iteration1=None, ema_decay1=None, groups1=None, stochastic_round1=False, \
+            fp_forward2=False, clip_val2=None, level2=256, non_negative_only2=True, iteration2=None, ema_decay2=None, groups2=None, stochastic_round2=False, ):
   
-        input1 = custom_quant.Quant.forward(ctx, input1, training, fp_forward1, clip_val1, level1, non_negative_only1, iteration1, ema_decay1, groups1, '_1')
-        input2 = custom_quant.Quant.forward(ctx, input2, training, fp_forward2, clip_val2, level2, non_negative_only2, iteration2, ema_decay2, groups2, '_2')
+        input1 = custom_quant.Quant.forward(ctx, input1, training, fp_forward1, clip_val1, level1, non_negative_only1, iteration1, ema_decay1, groups1, stochastic_round1, '_1')
+        input2 = custom_quant.Quant.forward(ctx, input2, training, fp_forward2, clip_val2, level2, non_negative_only2, iteration2, ema_decay2, groups2, stochastic_round2, '_2')
         output = input1.matmul(input2)
         return output
 
@@ -42,7 +42,7 @@ class matmul(torch.autograd.Function):
         if ctx.needs_input_grad[11] and grad_input2 is not None:
             grad_clip2 = custom_quant.Quant.backward(ctx, grad_input2, '_2')
 
-        return grad_input1, grad_input2, None, None, grad_clip1, None, None,None, None, None, None, grad_clip2, None, None, None, None, None
+        return grad_input1, grad_input2, None, None, grad_clip1, None, None, None, None, None, None, None, grad_clip2, None, None, None, None, None, None
 
 class MatMul(nn.Module):
     def __init__(self, memory_saving=False, args=None, logger=None, groups=1):
@@ -59,9 +59,9 @@ class MatMul(nn.Module):
         if self.quant1.enable and self.quant2.enable:
             y = matmul.apply(x1, x2, self.training, \
                              self.quant1.fp_forward, self.quant1.clip_val, self.quant1.level,
-                             self.quant1.non_negative_only, self.quant1.iteration, self.quant1.ema_decay, self.quant1.groups,
+                             self.quant1.non_negative_only, self.quant1.iteration, self.quant1.ema_decay, self.quant1.groups, self.quant1.stochastic_round,
                              self.quant2.fp_forward, self.quant2.clip_val, self.quant2.level,
-                             self.quant2.non_negative_only, self.quant2.iteration, self.quant2.ema_decay, self.quant2.groups)
+                             self.quant2.non_negative_only, self.quant2.iteration, self.quant2.ema_decay, self.quant2.groups, self.quant2.stochastic_round)
         else:
             y = torch.matmul(x1, x2)
         return y
