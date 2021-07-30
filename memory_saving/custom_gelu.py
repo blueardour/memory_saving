@@ -14,8 +14,8 @@ else:
 
 class gelu(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, training=False, fp_forward=False, clip_val=None, level=256, non_negative_only=True, iteration=None, ema_decay=None):
-        x = custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay)
+    def forward(ctx, x, training=False, fp_forward=False, clip_val=None, level=256, non_negative_only=True, iteration=None, ema_decay=None, groups=None):
+        x = custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups)
         y = F.gelu(x)
         return y
 
@@ -29,31 +29,38 @@ class gelu(torch.autograd.Function):
         else:
             grad_input = native.gelu_backward_cpu(grad_output, x)
 
-        grad_clip = custom_quant.Quant.backward(ctx, grad_input)
-        return grad_input, None, None, grad_clip, None, None, None, None
+        if ctx.needs_input_grad[3] and grad_input is not None:
+            grad_clip = custom_quant.Quant.backward(ctx, grad_input)
+        else:
+            setattr(ctx, 'clip_val{}'.format('_'), None)
+            setattr(ctx, 'non_negative_only{}'.format('_'), None)
+            setattr(ctx, 'level{}'.format('_'), None)
+        return grad_input, None, None, grad_clip, None, None, None, None, None
 
 class GELU(nn.GELU, custom_quant.Quant):
-    def __init__(self, memory_saving=False, args=None, logger=None):
+    def __init__(self, memory_saving=False, args=None, logger=None, groups=1):
         super(GELU, self).__init__()
-        custom_quant.Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger)
+        custom_quant.Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger, groups=groups)
         self.tag = 'gelu'
 
     def __repr__(self):
         return self.__str__()
 
     def forward(self, x):
-        if self.init_phase:
-            assert self.training == False
-            self.init_base_on_search(x)
-            y = F.gelu(x)
-            return y
-
         if self.enable:
             y = gelu.apply(x, self.training, self.fp_forward, self.clip_val, self.level, self.non_negative_only,
-                           self.iteration, self.ema_decay)
+                           self.iteration, self.ema_decay, self.groups)
         else:
             y = F.gelu(x)
         return y
+
+        # if self.init_phase:
+        #     assert self.training == False
+        #     self.init_base_on_search(x)
+        #     y = F.gelu(x)
+        #     return y
+
+
 
     # def forward(self, x):
     #     if self.enable:

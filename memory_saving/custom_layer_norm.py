@@ -10,8 +10,8 @@ from . import packbit
 class layer_norm(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, normalized_shape, weight, bias, eps, training=False, fp_forward=False, clip_val=None, level=255, \
-            non_negative_only=True, iteration=None, ema_decay=None):
-        x = custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay)
+            non_negative_only=True, iteration=None, ema_decay=None, groups=None):
+        x = custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups)
         if torch.__version__  >= "1.8":
             if x.is_cuda:
                 y, mean, rstd = native.layer_norm_forward_cuda(x, normalized_shape, weight, bias, eps)
@@ -69,13 +69,13 @@ class layer_norm(torch.autograd.Function):
         if ctx.needs_input_grad[7] and grad_input is not None:
             grad_clip = custom_quant.Quant.backward(ctx, grad_input)
 
-        return grad_input, None, grad_weight, grad_bias, None, None, None, grad_clip, None, None, None, None
+        return grad_input, None, grad_weight, grad_bias, None, None, None, grad_clip, None, None, None, None, None
 
 class LayerNorm(nn.LayerNorm, custom_quant.Quant):
     def __init__(self, normalized_shape, eps=1e-05, elementwise_affine=True, \
-                memory_saving=False, args=None, logger=None):
+                memory_saving=False, args=None, logger=None, groups=1):
         super(LayerNorm, self).__init__(normalized_shape, eps=eps, elementwise_affine=elementwise_affine)
-        custom_quant.Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger)
+        custom_quant.Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger, groups=groups)
         self.tag = 'layernorm'
 
     def __repr__(self):
@@ -83,19 +83,21 @@ class LayerNorm(nn.LayerNorm, custom_quant.Quant):
 
 
     def forward(self, x):
-        if self.init_phase:
-            assert self.training == False
-            self.init_base_on_search(x)
-            y = F.layer_norm(x, self.normalized_shape, self.weight, self.bias, self.eps)
-            return y
-
         if self.enable:
             y = layer_norm.apply(x, self.normalized_shape, self.weight, self.bias, self.eps, \
                                  self.training, self.fp_forward, self.clip_val, self.level, self.non_negative_only,
-                                 self.iteration, self.ema_decay)
+                                 self.iteration, self.ema_decay, self.groups)
         else:
             y = F.layer_norm(x, self.normalized_shape, self.weight, self.bias, self.eps)
         return y
+
+        # if self.init_phase:
+        #     assert self.training == False
+        #     self.init_base_on_search(x)
+        #     y = F.layer_norm(x, self.normalized_shape, self.weight, self.bias, self.eps)
+        #     return y
+
+
 
     # def forward(self, x):
     #     if self.enable:

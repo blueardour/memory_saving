@@ -14,16 +14,59 @@ else:
     from .clip import find_clip_aciq, find_clip_entropy, find_clip_mmse
 import pydevd
 
+def pack_group(x, groups):
+    input_shape = x.shape
+    if len(input_shape) == 3:
+        B, N, C = input_shape
+        x = x.reshape(B, N, groups, C // groups).permute(0, 1, 3, 2).reshape(-1, groups)
+    elif len(input_shape) == 2:
+        B, C = input_shape
+        x = x.reshape(B, groups, C // groups).permute(0, 2, 1).reshape(-1, groups)
+    else:
+        assert len(input_shape) == 4
+        B, H, N, D = input_shape
+        if groups != H:
+            assert groups == 1
+            x = x.reshape(-1, 1)
+        else:
+            x = x.permute(0, 2, 3, 1).reshape(-1, groups)
+    return x
+
+def depack_group(x, groups, input_shape):
+    if len(input_shape) == 3:
+        B, N, C = input_shape
+        x = x.reshape(B, N, C // groups, groups).permute(0, 1, 3, 2).reshape(B, N, C)
+    elif len(input_shape) == 2:
+        B, C = input_shape
+        x = x.reshape(B, C // groups, groups).permute(0, 2, 1).reshape(B, C)
+    else:
+        B, H, N, D = input_shape
+        if groups != H:
+            assert groups == 1
+            x = x.reshape(B, H, N, D)
+        else:
+            x = x.reshape(B, N, D, groups).permute(0, 3, 1, 2)
+    return x
+
+def update_clip_val(input, clip_val, iteration, ema_decay):
+    max_value, _ = torch.max(input.abs(), dim=0)
+    if iteration == 0:
+        clip_val.data = max_value
+    else:
+        clip_val.sub_((1 - ema_decay) * (clip_val - max_value))
+    iteration.add_(1)
+
 
 class Quant(object):
-    def __init__(self, memory_saving=False, args=None, logger=None, enable=False, tag='fm'):
+    def __init__(self, memory_saving=False, args=None, logger=None, enable=False, tag='fm', groups=1):
         assert isinstance(self, nn.Module)
 
         self.enable = memory_saving or enable
         self.fp_forward = False
         # quantizer
         self.iteration = nn.Parameter(torch.zeros(1), requires_grad=False)
-        self.clip_val = nn.Parameter(torch.Tensor([1.0]))
+        self.groups = groups
+        self.clip_val = nn.Parameter(torch.Tensor([1.0] * groups))
         self.level = 0
         self.non_negative_only = False
         self.tag = tag
@@ -35,10 +78,10 @@ class Quant(object):
         self.stable = -1
         self.correlate = 1.0
         self.warmup_choice = 'MA'  # or 'EMA'
-        self.ema_decay = 0.9999
+        self.ema_decay = 0.9
         self.requires_grad = False
         self.init_choice = 'mse'  # or 'entropy', 'mse'
-        self.init_phase = True
+        self.init_phase = False
 
         class logger_wrapper(object):
             def info(self, string):
@@ -60,8 +103,8 @@ class Quant(object):
                 self.level = int(2 ** args.fm_bit)
             if hasattr(args, 'fm_level') and args.fm_level is not None:
                 self.level = args.fm_level
-            if hasattr(args, 'fm_boundary') and args.fm_boundary is not None:
-                self.clip_val.fill_(args.fm_boundary)
+            # if hasattr(args, 'fm_boundary') and args.fm_boundary is not None:
+            #     self.clip_val.fill_(args.fm_boundary)
             if hasattr(args, 'fm_stable'):
                 self.stable = args.fm_stable
             if hasattr(args, 'fm_correlate'):
@@ -76,11 +119,11 @@ class Quant(object):
             #    self.level = 257
 
             self.verbose(
-                "index({})-clip_val({})-level({})-stable({})-correlate({})-non_negative_only({})-requires_grad({})-init_choice({})".format(
-                    self.index, self.clip_val.item(), self.level, self.stable, self.correlate, self.non_negative_only,
-                    self.requires_grad, self.init_choice))
+                "index({})-clip_val({})-level({})-stable({})-correlate({})-non_negative_only({})-requires_grad({})-init_choice({})-groups({})".format(
+                    self.index, self.clip_val.tolist(), self.level, self.stable, self.correlate, self.non_negative_only,
+                    self.requires_grad, self.init_choice, self.groups))
         self.items = ['clip_val', 'level', 'stable', 'correlate', 'non_negative_only', 'warmup_choice', 'ema_decay',
-                      'requires_grad', 'init_choice']
+                      'requires_grad', 'init_choice', 'groups']
         self.clip_val.requires_grad = self.enable and self.requires_grad
 
     def __str__(self):
@@ -113,7 +156,8 @@ class Quant(object):
         iteration = self.iteration.item()
         with torch.no_grad():
             if hasattr(self, 'clip_val') and isinstance(self.clip_val, torch.Tensor):
-                max_value = data.abs().max().item()
+                temp = pack_group(data.abs(), self.groups)
+                max_value, _ = torch.max(temp, dim=0)
                 if self.correlate > 0:
                     max_value = max_value * self.correlate
 
@@ -127,7 +171,7 @@ class Quant(object):
                         self.clip_val.sub_((1 - self.ema_decay) * (self.clip_val - data.abs().max()))
 
                 if iteration == (self.stable - 1):
-                    self.verbose('update %s clip_val for index %d to %r' % (self.tag, self.index, self.clip_val.item()))
+                    self.verbose(f'update {self.tag} clip_val for index {self.index} to {self.clip_val.tolist()}')
         self.iteration.add_(1)
 
     def init_base_on_search(self, data=None):
@@ -247,13 +291,7 @@ class Quant(object):
             return feedback
 
     @staticmethod
-    def forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, identifier="_"):
-        def update_clip_val(input, clip_val, iteration, ema_decay, reduce_fn=lambda x: x.abs().max()):
-            if iteration == 0:
-                clip_val.fill_(reduce_fn(input))
-            else:
-                clip_val.sub_((1 - ema_decay) * (clip_val - reduce_fn(input)))
-            iteration.add_(1)
+    def forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups, identifier="_"):
 
         def save_for_backward(y, signed=True):
             if level == 65536 and signed:
@@ -269,11 +307,15 @@ class Quant(object):
             else:
                 raise RuntimeError("un-supported quanitzation bit: {level}")
 
+        input_shape = x.shape
+
         if level == 0:
             y = x
             if training:
                 setattr(ctx, 'input{}'.format(identifier), y)
         else:
+            x = pack_group(x, groups)
+
             if training and not clip_val.requires_grad:
                 update_clip_val(x.detach(), clip_val, iteration, ema_decay)
 
@@ -285,8 +327,8 @@ class Quant(object):
                 if training:
                     save_for_backward(y, signed=False)
                 y = y / (level - 1) * clip_val
-                # is_filtered = x >= clip_val
-                max_clipped = x >= clip_val
+                # max_clipped = x >= clip_val.unsqueeze(0).expand_as(x)
+                # print(f'quant error = {(y-x).abs().sum()}')
             else:
                 y = x / clip_val * (level // 2)
                 y = torch.round(y)
@@ -294,22 +336,22 @@ class Quant(object):
                 if training:
                     save_for_backward(y, signed=True)
                 y = y / (level // 2) * clip_val
-                # is_filtered = (x >= (clip_val * (level-level//2-1) / (level//2))) | (x <= -clip_val)
-                max_clipped = x >= (clip_val * (level - level // 2 - 1) / (level // 2))
-                min_clipped = x <= -clip_val
-
+                # max_clipped = x >= (clip_val * (level - level // 2 - 1) / (level // 2))
+                # min_clipped = x <= -clip_val
+                # print(f'quant error = {(y - x).abs().sum()}')
             if training:
-                # setattr(ctx, 'is_filtered{}'.format(identifier), packbit.packbits_padded(is_filtered, dim=0))
-                setattr(ctx, 'max_clipped{}'.format(identifier), packbit.packbits_padded(max_clipped, dim=0))
-                if not non_negative_only:
-                    setattr(ctx, 'min_clipped{}'.format(identifier), packbit.packbits_padded(min_clipped, dim=0))
+                # setattr(ctx, 'max_clipped{}'.format(identifier), packbit.packbits_padded(max_clipped, dim=0))
+                # if not non_negative_only:
+                #     setattr(ctx, 'min_clipped{}'.format(identifier), packbit.packbits_padded(min_clipped, dim=0))
                 setattr(ctx, 'clip_val{}'.format(identifier), clip_val)
-
+                setattr(ctx, 'input_shape{}'.format(identifier), input_shape)
 
         if training:
             setattr(ctx, 'level{}'.format(identifier), level)
             setattr(ctx, 'non_negative_only{}'.format(identifier), non_negative_only)
-        return x if fp_forward else y
+
+        res = x if fp_forward else y
+        return depack_group(res, groups, input_shape)
 
     @staticmethod
     def restore(ctx, identifier="_"):
@@ -327,6 +369,7 @@ class Quant(object):
 
         input = getattr(ctx, 'input{}'.format(identifier))
         level = getattr(ctx, 'level{}'.format(identifier))
+        input_shape = getattr(ctx, 'input_shape{}'.format(identifier))
         non_negative_only = getattr(ctx, 'non_negative_only{}'.format(identifier))
         setattr(ctx, 'input{}'.format(identifier), None)
         if level == 0:
@@ -337,23 +380,32 @@ class Quant(object):
                 y = saved_tensors(input, level, dtype=clip_val.dtype) / (level - 1) * clip_val
             else:
                 y = saved_tensors(input, level, dtype=clip_val.dtype) / (level // 2) * clip_val
+
+        y = depack_group(y, clip_val.size()[0], input_shape)
         return y
 
     @staticmethod
     def backward(ctx, grad_input, identifier="_"):
+        assert 1 == 0, 'temporarily stop supporting gradient update for clip value'
         # pydevd.settrace(suspend=False, trace_only_current_thread=True)
         level = getattr(ctx, 'level{}'.format(identifier))
         if level == 0:
             grad_clip = None
         else:
             clip_val = getattr(ctx, 'clip_val{}'.format(identifier))
-
+            input_shape = getattr(ctx, 'input_shape{}'.format(identifier))
             non_negative_only = getattr(ctx, 'non_negative_only{}'.format(identifier))
+            groups = clip_val.size()[0]
+
+            grad_input = pack_group(grad_input, clip_val.size()[0])
+            grad_clip = torch.zeros(groups).to(clip_val.device)
 
             if non_negative_only:
                 max_clipped = getattr(ctx, 'max_clipped{}'.format(identifier))
                 max_clipped = packbit.unpackbits_padded(max_clipped, dim=0).to(dtype=torch.bool)
-                grad_clip = grad_input.masked_select(max_clipped).sum().reshape(clip_val.shape)
+                for i in range(groups):
+                    grad_clip[i] = grad_input[:, i].masked_select(max_clipped[:, i]).sum()
+
                 grad_input.masked_fill_(max_clipped, 0.0)
                 setattr(ctx, 'max_clipped{}'.format(identifier), None)
             else:
@@ -363,8 +415,8 @@ class Quant(object):
                 min_clipped = getattr(ctx, 'min_clipped{}'.format(identifier))
                 min_clipped = packbit.unpackbits_padded(min_clipped, dim=0).to(dtype=torch.bool)
 
-                grad_clip = grad_input.masked_select(max_clipped).sum() - grad_input.masked_select(min_clipped).sum()
-                grad_clip = grad_clip.reshape(clip_val.shape)
+                for i in range(groups):
+                    grad_clip[i] = grad_input[:, i].masked_select(max_clipped[:, i]).sum() - grad_input[:, i].masked_select(min_clipped[:, i]).sum()
 
                 grad_input.masked_fill_(max_clipped, 0.0)
                 grad_input.masked_fill_(min_clipped, 0.0)
@@ -373,13 +425,18 @@ class Quant(object):
                 setattr(ctx, 'min_clipped{}'.format(identifier), None)
 
             setattr(ctx, 'clip_val{}'.format(identifier), None)
+            setattr(ctx, 'non_negative_only{}'.format(identifier), None)
+            setattr(ctx, 'level{}'.format(identifier), None)
+
+            grad_input = depack_group(grad_input, groups, input_shape)
+
         return grad_clip
 
 
 class quantization(nn.Module, Quant):
-    def __init__(self, memory_saving=False, args=None, logger=None, tag='fm'):
+    def __init__(self, memory_saving=False, args=None, logger=None, tag='fm', groups=None):
         super(quantization, self).__init__()
-        Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger, tag=tag)
+        Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger, tag=tag, groups=groups)
 
     def __repr__(self):
         return self.__str__()
