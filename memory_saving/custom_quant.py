@@ -323,7 +323,7 @@ class Quant(object):
             clip_val = clip_val.abs().to(dtype=x.dtype)
 
             if stochastic_round:
-                noise = torch.rand(x.size(), device=x.device) - 0.5
+                noise = x.new(x.shape).uniform_(-0.5, 0.5)
             else:
                 noise = torch.zeros_like(x, device=x.device)
 
