@@ -17,9 +17,9 @@ else:
     
 class linear(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, weight, bias=None, training=True, fp_forward=False, clip_val=None, level=256, non_negative_only=True, iteration=None, ema_decay=None, groups=None, stochastic_round=False):
+    def forward(ctx, x, weight, bias=None, training=True, fp_forward=False, clip_val=None, level=256, non_negative_only=True, iteration=None, ema_decay=None, groups=None, stochastic_round=False, shift=None):
 
-        input = custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups, stochastic_round)
+        input = custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups, stochastic_round, shift)
         ctx.save_for_backward(weight, bias)
 
         output = input.matmul(weight.t())
@@ -47,10 +47,11 @@ class linear(torch.autograd.Function):
             grad_clip = custom_quant.Quant.backward(ctx, grad_input)
         else:
             setattr(ctx, 'clip_val{}'.format('_'), None)
+            setattr(ctx, 'shift{}'.format('_'), None)
             setattr(ctx, 'non_negative_only{}'.format('_'), None)
             setattr(ctx, 'level{}'.format('_'), None)
 
-        return grad_input, grad_weight, grad_bias, None, None, grad_clip, None, None, None, None, None, None
+        return grad_input, grad_weight, grad_bias, None, None, grad_clip, None, None, None, None, None, None, None
 
 class Linear(nn.Linear, custom_quant.Quant):
     def __init__(self, in_features, out_features, bias=True, \
@@ -63,9 +64,9 @@ class Linear(nn.Linear, custom_quant.Quant):
         return self.__str__()
 
     def forward(self, x):
-        if self.enable:
+        if self.enable and self.training:
             y = linear.apply(x, self.weight, self.bias, self.training, self.fp_forward, self.clip_val, self.level,
-                             self.non_negative_only, self.iteration, self.ema_decay, self.groups, self.stochastic_round)
+                             self.non_negative_only, self.iteration, self.ema_decay, self.groups, self.stochastic_round, self.shift)
         else:
             y = F.linear(x, self.weight, self.bias)
         return y

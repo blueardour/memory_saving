@@ -10,8 +10,8 @@ from . import packbit
 class layer_norm(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, normalized_shape, weight, bias, eps, training=False, fp_forward=False, clip_val=None, level=255, \
-            non_negative_only=True, iteration=None, ema_decay=None, groups=None, stochastic_round=False):
-        x = custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups, stochastic_round)
+            non_negative_only=True, iteration=None, ema_decay=None, groups=None, stochastic_round=False, shift=None):
+        x = custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups, stochastic_round, shift)
         if torch.__version__  >= "1.8":
             if x.is_cuda:
                 y, mean, rstd = native.layer_norm_forward_cuda(x, normalized_shape, weight, bias, eps)
@@ -68,8 +68,13 @@ class layer_norm(torch.autograd.Function):
 
         if ctx.needs_input_grad[7] and grad_input is not None:
             grad_clip = custom_quant.Quant.backward(ctx, grad_input)
+        else:
+            setattr(ctx, 'clip_val{}'.format('_'), None)
+            setattr(ctx, 'shift{}'.format('_'), None)
+            setattr(ctx, 'non_negative_only{}'.format('_'), None)
+            setattr(ctx, 'level{}'.format('_'), None)
 
-        return grad_input, None, grad_weight, grad_bias, None, None, None, grad_clip, None, None, None, None, None, None
+        return grad_input, None, grad_weight, grad_bias, None, None, None, grad_clip, None, None, None, None, None, None, None
 
 class LayerNorm(nn.LayerNorm, custom_quant.Quant):
     def __init__(self, normalized_shape, eps=1e-05, elementwise_affine=True, \
@@ -83,10 +88,10 @@ class LayerNorm(nn.LayerNorm, custom_quant.Quant):
 
 
     def forward(self, x):
-        if self.enable:
+        if self.enable and self.training:
             y = layer_norm.apply(x, self.normalized_shape, self.weight, self.bias, self.eps, \
                                  self.training, self.fp_forward, self.clip_val, self.level, self.non_negative_only,
-                                 self.iteration, self.ema_decay, self.groups, self.stochastic_round)
+                                 self.iteration, self.ema_decay, self.groups, self.stochastic_round, self.shift)
         else:
             y = F.layer_norm(x, self.normalized_shape, self.weight, self.bias, self.eps)
         return y

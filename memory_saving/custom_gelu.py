@@ -14,8 +14,8 @@ else:
 
 class gelu(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, training=False, fp_forward=False, clip_val=None, level=256, non_negative_only=True, iteration=None, ema_decay=None, groups=None, stochastic_round=False):
-        x = custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups, stochastic_round)
+    def forward(ctx, x, training=False, fp_forward=False, clip_val=None, level=256, non_negative_only=True, iteration=None, ema_decay=None, groups=None, stochastic_round=False, shift=None):
+        x = custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups, stochastic_round, shift)
         y = F.gelu(x)
         return y
 
@@ -33,9 +33,10 @@ class gelu(torch.autograd.Function):
             grad_clip = custom_quant.Quant.backward(ctx, grad_input)
         else:
             setattr(ctx, 'clip_val{}'.format('_'), None)
+            setattr(ctx, 'shift{}'.format('_'), None)
             setattr(ctx, 'non_negative_only{}'.format('_'), None)
             setattr(ctx, 'level{}'.format('_'), None)
-        return grad_input, None, None, grad_clip, None, None, None, None, None, None
+        return grad_input, None, None, grad_clip, None, None, None, None, None, None, None
 
 class GELU(nn.GELU, custom_quant.Quant):
     def __init__(self, memory_saving=False, args=None, logger=None, groups=1):
@@ -47,9 +48,9 @@ class GELU(nn.GELU, custom_quant.Quant):
         return self.__str__()
 
     def forward(self, x):
-        if self.enable:
+        if self.enable and self.training:
             y = gelu.apply(x, self.training, self.fp_forward, self.clip_val, self.level, self.non_negative_only,
-                           self.iteration, self.ema_decay, self.groups, self.stochastic_round)
+                           self.iteration, self.ema_decay, self.groups, self.stochastic_round, self.shift)
         else:
             y = F.gelu(x)
         return y

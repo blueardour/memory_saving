@@ -48,12 +48,16 @@ def depack_group(x, groups, input_shape):
             x = x.reshape(B, N, D, groups).permute(0, 3, 1, 2)
     return x
 
-def update_clip_val(input, clip_val, iteration, ema_decay):
-    max_value, _ = torch.max(input.abs(), dim=0)
+def update_clip_val_shift(input, clip_val, shift, iteration, ema_decay):
+    max_value, _ = torch.max(input, dim=0)
+    min_value, _ = torch.min(input, dim=0)
+    clip_range = max_value - min_value
     if iteration == 0:
-        clip_val.data = max_value
+        clip_val.data = clip_range
+        shift.data = min_value
     else:
-        clip_val.sub_((1 - ema_decay) * (clip_val - max_value))
+        clip_val.sub_((1 - ema_decay) * (clip_val - clip_range))
+        shift.sub_((1 - ema_decay) * (shift - min_value))
     iteration.add_(1)
 
 
@@ -83,6 +87,7 @@ class Quant(object):
         self.init_choice = 'mse'  # or 'entropy', 'mse'
         self.init_phase = False
         self.stochastic_round = False
+        self.shift = nn.Parameter(torch.Tensor([0.] * groups))
 
         class logger_wrapper(object):
             def info(self, string):
@@ -120,12 +125,13 @@ class Quant(object):
             #    self.level = 257
 
             self.verbose(
-                "index({})-clip_val({})-level({})-non_negative_only({})-groups({})-stochastic_round({})".format(
+                "index({})-clip_val({})-level({})-non_negative_only({})-groups({})-stochastic_round({})-({})".format(
                     self.index, self.clip_val.tolist(), self.level, self.non_negative_only,
-                    self.groups, self.stochastic_round))
+                    self.groups, self.stochastic_round, self.shift.tolist()))
         self.items = ['clip_val', 'level', 'stable', 'correlate', 'non_negative_only', 'warmup_choice', 'ema_decay',
-                      'requires_grad', 'init_choice', 'groups', 'stochastic_round']
+                      'requires_grad', 'init_choice', 'groups', 'stochastic_round', 'shift']
         self.clip_val.requires_grad = self.enable and self.requires_grad
+        self.shift.requires_grad = self.enable and self.requires_grad
 
     def __str__(self):
         if hasattr(self, 'repr'):
@@ -150,45 +156,45 @@ class Quant(object):
 
         return string
 
-    def init_based_on_warmup(self, data=None):
-        if (not self.enable and data is None) or not self.training:
-            return
+    # def init_based_on_warmup(self, data=None):
+    #     if (not self.enable and data is None) or not self.training:
+    #         return
+    #
+    #     iteration = self.iteration.item()
+    #     with torch.no_grad():
+    #         if hasattr(self, 'clip_val') and isinstance(self.clip_val, torch.Tensor):
+    #             temp = pack_group(data.abs(), self.groups)
+    #             max_value, _ = torch.max(temp, dim=0)
+    #             if self.correlate > 0:
+    #                 max_value = max_value * self.correlate
+    #
+    #             if self.warmup_choice == 'MA':
+    #                 self.clip_val.data = max_value + iteration * self.clip_val.data
+    #                 self.clip_val.div_(iteration + 1)
+    #             elif self.warmup_choice == 'EMA':
+    #                 if iteration == 0:
+    #                     self.clip_val.fill_(data.abs().max())
+    #                 else:
+    #                     self.clip_val.sub_((1 - self.ema_decay) * (self.clip_val - data.abs().max()))
+    #
+    #             if iteration == (self.stable - 1):
+    #                 self.verbose(f'update {self.tag} clip_val for index {self.index} to {self.clip_val.tolist()}')
+    #     self.iteration.add_(1)
 
-        iteration = self.iteration.item()
-        with torch.no_grad():
-            if hasattr(self, 'clip_val') and isinstance(self.clip_val, torch.Tensor):
-                temp = pack_group(data.abs(), self.groups)
-                max_value, _ = torch.max(temp, dim=0)
-                if self.correlate > 0:
-                    max_value = max_value * self.correlate
-
-                if self.warmup_choice == 'MA':
-                    self.clip_val.data = max_value + iteration * self.clip_val.data
-                    self.clip_val.div_(iteration + 1)
-                elif self.warmup_choice == 'EMA':
-                    if iteration == 0:
-                        self.clip_val.fill_(data.abs().max())
-                    else:
-                        self.clip_val.sub_((1 - self.ema_decay) * (self.clip_val - data.abs().max()))
-
-                if iteration == (self.stable - 1):
-                    self.verbose(f'update {self.tag} clip_val for index {self.index} to {self.clip_val.tolist()}')
-        self.iteration.add_(1)
-
-    def init_base_on_search(self, data=None):
-        if self.level == 0:
-            return
-        if self.init_choice == 'aciq':
-            alpha_best, max_abs = find_clip_aciq(data.flatten(), int(math.log(self.level, 2)))
-        elif self.init_choice == 'mse':
-            alpha_best, max_abs = find_clip_mmse(data.flatten(), int(math.log(self.level, 2)))
-        elif self.init_choice == 'entropy':
-            alpha_best, max_abs = find_clip_entropy(data.flatten(), int(math.log(self.level, 2)))
-        else:
-            assert 1 == 0, "init choice not implemented"
-        with torch.no_grad():
-            self.clip_val.fill_(alpha_best)
-            self.verbose('update %s clip_val for index %d to %5.4f / %5.4f' % (self.tag, self.index, alpha_best, max_abs))
+    # def init_base_on_search(self, data=None):
+    #     if self.level == 0:
+    #         return
+    #     if self.init_choice == 'aciq':
+    #         alpha_best, max_abs = find_clip_aciq(data.flatten(), int(math.log(self.level, 2)))
+    #     elif self.init_choice == 'mse':
+    #         alpha_best, max_abs = find_clip_mmse(data.flatten(), int(math.log(self.level, 2)))
+    #     elif self.init_choice == 'entropy':
+    #         alpha_best, max_abs = find_clip_entropy(data.flatten(), int(math.log(self.level, 2)))
+    #     else:
+    #         assert 1 == 0, "init choice not implemented"
+    #     with torch.no_grad():
+    #         self.clip_val.fill_(alpha_best)
+    #         self.verbose('update %s clip_val for index %d to %5.4f / %5.4f' % (self.tag, self.index, alpha_best, max_abs))
 
     def update_quantization_parameter(self, **parameters):
         feedback = dict()
@@ -269,6 +275,7 @@ class Quant(object):
                                     len(self.args.global_buffer), key))
 
         self.clip_val.requires_grad = self.enable and self.requires_grad
+        self.shift.requires_grad = self.enable and self.requires_grad
         if not self.enable:
             return None
         else:
@@ -292,7 +299,7 @@ class Quant(object):
             return feedback
 
     @staticmethod
-    def forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups, stochastic_round, identifier="_"):
+    def forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups, stochastic_round, shift, identifier="_"):
 
         def save_for_backward(y, signed=True):
             if level == 65536 and signed:
@@ -318,7 +325,7 @@ class Quant(object):
             x = pack_group(x, groups)
 
             if training and not clip_val.requires_grad:
-                update_clip_val(x.detach(), clip_val, iteration, ema_decay)
+                update_clip_val_shift(x.detach(), clip_val, shift, iteration, ema_decay)
 
             clip_val = clip_val.abs().to(dtype=x.dtype)
 
@@ -327,37 +334,20 @@ class Quant(object):
             else:
                 noise = torch.zeros_like(x, device=x.device)
 
-            if non_negative_only:
-                y = x / clip_val * (level - 1)
-                y = torch.round(y + noise)
-                y = torch.clamp(y, min=0, max=level - 1)
-                if training:
-                    save_for_backward(y, signed=False)
-                y = y / (level - 1) * clip_val
-                # max_clipped = x >= clip_val.unsqueeze(0).expand_as(x)
-                # print(f'quant error = {(y-x).abs().sum()}')
-            else:
-                y = x / clip_val * (level // 2)
-                y = torch.round(y + noise)
-                y = torch.clamp(y, min=-level // 2, max=level - level // 2 - 1)
-                if training:
-                    save_for_backward(y, signed=True)
-                y = y / (level // 2) * clip_val
-                # max_clipped = x >= (clip_val * (level - level // 2 - 1) / (level // 2))
-                # min_clipped = x <= -clip_val
-                # print(f'quant error = {(y - x).abs().sum()}')
-
+            y = (x - shift) / clip_val * (level - 1)
+            y = torch.round(y + noise)
+            y = torch.clamp(y, min=0, max=level - 1)
+            if training:
+                save_for_backward(y, signed=False)
+            y = y / (level - 1) * clip_val + shift
 
             if training:
-                # setattr(ctx, 'max_clipped{}'.format(identifier), packbit.packbits_padded(max_clipped, dim=0))
-                # if not non_negative_only:
-                #     setattr(ctx, 'min_clipped{}'.format(identifier), packbit.packbits_padded(min_clipped, dim=0))
                 setattr(ctx, 'clip_val{}'.format(identifier), clip_val)
+                setattr(ctx, 'shift{}'.format(identifier), shift)
                 setattr(ctx, 'input_shape{}'.format(identifier), input_shape)
 
         if training:
             setattr(ctx, 'level{}'.format(identifier), level)
-            setattr(ctx, 'non_negative_only{}'.format(identifier), non_negative_only)
 
         res = x if fp_forward else y
         return depack_group(res, groups, input_shape)
@@ -379,16 +369,13 @@ class Quant(object):
         input = getattr(ctx, 'input{}'.format(identifier))
         level = getattr(ctx, 'level{}'.format(identifier))
         input_shape = getattr(ctx, 'input_shape{}'.format(identifier))
-        non_negative_only = getattr(ctx, 'non_negative_only{}'.format(identifier))
         setattr(ctx, 'input{}'.format(identifier), None)
         if level == 0:
             y = input
         else:
             clip_val = getattr(ctx, 'clip_val{}'.format(identifier))
-            if non_negative_only:
-                y = saved_tensors(input, level, dtype=clip_val.dtype) / (level - 1) * clip_val
-            else:
-                y = saved_tensors(input, level, dtype=clip_val.dtype) / (level // 2) * clip_val
+            shift = getattr(ctx, 'shift{}'.format(identifier))
+            y = saved_tensors(input, level, dtype=clip_val.dtype) / (level - 1) * clip_val + shift
 
         y = depack_group(y, clip_val.size()[0], input_shape)
         return y
