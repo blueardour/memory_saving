@@ -8,7 +8,7 @@ def check_quant():
 
 
     for i in range(200):
-        data = torch.randn(128 * 197 * 197, 3).cuda()
+        data = torch.randn(128*197*197, 3).cuda()
         # temp = data.permute(0, 2, 1).reshape(-1, 3)
 
         mins, _ = data.min(0)
@@ -31,7 +31,9 @@ def check_quant():
         torch_dequant_out = y / (level - 1) * scale + mins
 
         torch_quant_error = (torch_dequant_out - data).norm()
-        diff += (cuda_quant_error - torch_quant_error).item()
+        cur_error = (cuda_quant_error - torch_quant_error).item()
+        print(cur_error)
+        diff += cur_error
     print('diff = ', diff/200)
 
 
@@ -118,7 +120,7 @@ def test_cuda():
 
 
 if __name__ == '__main__':
-    # check_quant()
+    check_quant()
     # test_cuda()
     # # CUDA Forward: 61.892 us
     # # Torch Forward: 200.598 us
@@ -143,6 +145,13 @@ if __name__ == '__main__':
 
     # CUDA Forward: 178.211 us
     # Torch Forward: 1148.423 us
+
+    # CUDA Forward: 98.196 us
+    # Torch Forward: 607.925 us
+
+    # __float2int_rn
+    # CUDA Forward: 92.401 us
+    # Torch Forward: 584.516 us
     data = torch.randn(197 * 197 * 128, 3).cuda()
 
     mins, _ = data.min(0)

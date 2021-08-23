@@ -14,30 +14,32 @@ using torch::Tensor;
 using torch::IntArrayRef;
 
 Tensor pack_single_precision_cuda(
-    Tensor data, Tensor scale, Tensor min, int bits, bool stochastic, int batch_size);
+    Tensor data, Tensor scale, Tensor shift, int bits, bool stochastic, int batch_size);
+
 Tensor unpack_single_precision_cuda(
-    Tensor data, int bits, Tensor scale, Tensor min, int64_t N, int64_t num_groups, int64_t group_size);
+    Tensor data, int bits, Tensor scale, Tensor shift, int64_t N, int64_t num_groups, int64_t group_size);
 
 // Pack/Unpack single precision
 Tensor pack_single_precision(Tensor data,
-                                                Tensor scale,
-                                                Tensor min,
-                                                int bits,
-                                                bool stochastic, int batch_size) {
-//  CHECK_CUDA_TENSOR_DIM_FLOAT(data, 3);
-  return pack_single_precision_cuda(data, scale, min, bits, stochastic, batch_size);
+                             Tensor scale,
+                             Tensor shift,
+                             int bits,
+                             bool stochastic, 
+                             int batch_size) {
+
+  return pack_single_precision_cuda(data, scale, shift, bits, stochastic, batch_size);
 }
 
 Tensor unpack_single_precision(Tensor data,
                                int bits,
                                Tensor scale,
-                               Tensor min,
+                               Tensor shift,
                                int64_t N,
                                int64_t num_groups,
                                int64_t group_size) {
   CHECK_CUDA_TENSOR_DIM_TYPE(data, 1, torch::kInt8);
 
-  return unpack_single_precision_cuda(data, bits, scale, min,
+  return unpack_single_precision_cuda(data, bits, scale, shift,
                                       N, num_groups, group_size);
 }
 
