@@ -31,26 +31,26 @@ class softmax(torch.autograd.Function):
         x = custom_quant.Quant.restore(ctx, '_1')
         y = custom_quant.Quant.restore(ctx, '_2')
 
-        if ctx.needs_input_grad[11] and grad_output is not None:
-            grad_clip2 = custom_quant.Quant.backward(ctx, grad_output, '_2')
-        else:
-            setattr(ctx, 'clip_val{}'.format('_2'), None)
-            setattr(ctx, 'shift{}'.format('_2'), None)
-            setattr(ctx, 'non_negative_only{}'.format('_2'), None)
-            setattr(ctx, 'level{}'.format('_2'), None)
+        # if ctx.needs_input_grad[11] and grad_output is not None:
+        #     grad_clip2 = custom_quant.Quant.backward(ctx, grad_output, '_2')
+        # else:
+        #     setattr(ctx, 'clip_val{}'.format('_2'), None)
+        #     setattr(ctx, 'shift{}'.format('_2'), None)
+        #     setattr(ctx, 'non_negative_only{}'.format('_2'), None)
+        #     setattr(ctx, 'level{}'.format('_2'), None)
 
         if x.is_cuda:
             grad_input = native.softmax_backward_cuda(grad_output, y, ctx.dim, x)
         else:
             grad_input = native.softmax_backward_cpu(grad_output, y, ctx.dim, x)
 
-        if ctx.needs_input_grad[4] and grad_input is not None:
-            grad_clip1 = custom_quant.Quant.backward(ctx, grad_input, '_1')
-        else:
-            setattr(ctx, 'clip_val{}'.format('_1'), None)
-            setattr(ctx, 'shift{}'.format('_1'), None)
-            setattr(ctx, 'non_negative_only{}'.format('_1'), None)
-            setattr(ctx, 'level{}'.format('_1'), None)
+        # if ctx.needs_input_grad[4] and grad_input is not None:
+        #     grad_clip1 = custom_quant.Quant.backward(ctx, grad_input, '_1')
+        # else:
+        #     setattr(ctx, 'clip_val{}'.format('_1'), None)
+        #     setattr(ctx, 'shift{}'.format('_1'), None)
+        #     setattr(ctx, 'non_negative_only{}'.format('_1'), None)
+        #     setattr(ctx, 'level{}'.format('_1'), None)
 
         return grad_input, None, None, None, grad_clip1, None, None, None, None, None, None, None, None, grad_clip2, None, None, None, None, None, None, None
 

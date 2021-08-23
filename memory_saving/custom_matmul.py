@@ -37,21 +37,21 @@ class matmul(torch.autograd.Function):
         if ctx.needs_input_grad[1]:
             grad_input2 = input1.transpose(-2, -1).to(dtype=grad_output.dtype).matmul(grad_output)
 
-        if ctx.needs_input_grad[4] and grad_input1 is not None:
-            grad_clip1 = custom_quant.Quant.backward(ctx, grad_input1, '_1')
-        else:
-            setattr(ctx, 'clip_val{}'.format('_1'), None)
-            setattr(ctx, 'shift{}'.format('_1'), None)
-            setattr(ctx, 'non_negative_only{}'.format('_1'), None)
-            setattr(ctx, 'level{}'.format('_1'), None)
-
-        if ctx.needs_input_grad[11] and grad_input2 is not None:
-            grad_clip2 = custom_quant.Quant.backward(ctx, grad_input2, '_2')
-        else:
-            setattr(ctx, 'clip_val{}'.format('_2'), None)
-            setattr(ctx, 'shift{}'.format('_2'), None)
-            setattr(ctx, 'non_negative_only{}'.format('_2'), None)
-            setattr(ctx, 'level{}'.format('_2'), None)
+        # if ctx.needs_input_grad[4] and grad_input1 is not None:
+        #     grad_clip1 = custom_quant.Quant.backward(ctx, grad_input1, '_1')
+        # else:
+        #     setattr(ctx, 'clip_val{}'.format('_1'), None)
+        #     setattr(ctx, 'shift{}'.format('_1'), None)
+        #     setattr(ctx, 'non_negative_only{}'.format('_1'), None)
+        #     setattr(ctx, 'level{}'.format('_1'), None)
+        #
+        # if ctx.needs_input_grad[11] and grad_input2 is not None:
+        #     grad_clip2 = custom_quant.Quant.backward(ctx, grad_input2, '_2')
+        # else:
+        #     setattr(ctx, 'clip_val{}'.format('_2'), None)
+        #     setattr(ctx, 'shift{}'.format('_2'), None)
+        #     setattr(ctx, 'non_negative_only{}'.format('_2'), None)
+        #     setattr(ctx, 'level{}'.format('_2'), None)
 
         return grad_input1, grad_input2, None, None, grad_clip1, None, None, None, None, None, None, None, None, grad_clip2, None, None, None, None, None, None, None
 

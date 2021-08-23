@@ -66,13 +66,13 @@ class layer_norm(torch.autograd.Function):
                 grad_input, grad_weight, grad_bias = native.layer_norm_backward_cpu(grad_output, x, mean, rstd, weight, M, N, output_mask)
         ctx.layer_norm_parameters = None
 
-        if ctx.needs_input_grad[7] and grad_input is not None:
-            grad_clip = custom_quant.Quant.backward(ctx, grad_input)
-        else:
-            setattr(ctx, 'clip_val{}'.format('_'), None)
-            setattr(ctx, 'shift{}'.format('_'), None)
-            setattr(ctx, 'non_negative_only{}'.format('_'), None)
-            setattr(ctx, 'level{}'.format('_'), None)
+        # if ctx.needs_input_grad[7] and grad_input is not None:
+        #     grad_clip = custom_quant.Quant.backward(ctx, grad_input)
+        # else:
+        #     setattr(ctx, 'clip_val{}'.format('_'), None)
+        #     setattr(ctx, 'shift{}'.format('_'), None)
+        #     setattr(ctx, 'non_negative_only{}'.format('_'), None)
+        #     setattr(ctx, 'level{}'.format('_'), None)
 
         return grad_input, None, grad_weight, grad_bias, None, None, None, grad_clip, None, None, None, None, None, None, None
 

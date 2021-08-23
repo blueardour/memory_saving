@@ -29,13 +29,13 @@ class gelu(torch.autograd.Function):
         else:
             grad_input = native.gelu_backward_cpu(grad_output, x)
 
-        if ctx.needs_input_grad[3] and grad_input is not None:
-            grad_clip = custom_quant.Quant.backward(ctx, grad_input)
-        else:
-            setattr(ctx, 'clip_val{}'.format('_'), None)
-            setattr(ctx, 'shift{}'.format('_'), None)
-            setattr(ctx, 'non_negative_only{}'.format('_'), None)
-            setattr(ctx, 'level{}'.format('_'), None)
+        # if ctx.needs_input_grad[3] and grad_input is not None:
+        #     grad_clip = custom_quant.Quant.backward(ctx, grad_input)
+        # else:
+        #     setattr(ctx, 'clip_val{}'.format('_'), None)
+        #     setattr(ctx, 'shift{}'.format('_'), None)
+        #     setattr(ctx, 'non_negative_only{}'.format('_'), None)
+        #     setattr(ctx, 'level{}'.format('_'), None)
         return grad_input, None, None, grad_clip, None, None, None, None, None, None, None
 
 class GELU(nn.GELU, custom_quant.Quant):

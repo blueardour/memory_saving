@@ -1,5 +1,12 @@
 ## Update
 
+**2021-08-23**
+
+1. Speed up quantization with cuda kernel
+2. Release unused variables
+
+
+
 **2021-08-02**
 
 1. Change quantization method
