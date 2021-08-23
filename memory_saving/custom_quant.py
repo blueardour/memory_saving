@@ -11,9 +11,9 @@ if 'memory_saving' not in __name__:
 else:
     from . import packbit
     from . import native
-    from .clip import find_clip_aciq, find_clip_entropy, find_clip_mmse
+    # from .clip import find_clip_aciq, find_clip_entropy, find_clip_mmse
     from .cpp_extension import quantization as ext_quant
-import pydevd
+# import pydevd
 
 def pack_group(x, groups):
     input_shape = x.shape
