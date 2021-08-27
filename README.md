@@ -1,5 +1,10 @@
 ## Update
 
+**2021-08-27**
+
+1. Disable CUDA kernel, back to torch quantization
+2. Update code for activation plot
+
 **2021-08-23**
 
 1. Speed up quantization with cuda kernel
