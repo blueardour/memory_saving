@@ -23,11 +23,11 @@ setup(
             ['native.cpp'],
             extra_compile_args=compile_args,
             ),
-            cpp_extension.CUDAExtension(
-                'memory_saving.cpp_extension.quantization',
-                ['memory_saving/cpp_extension/quantization.cc',
-                 'memory_saving/cpp_extension/quantization_cuda_kernel.cu']
-            ),
+            # cpp_extension.CUDAExtension(
+            #     'memory_saving.cpp_extension.quantization',
+            #     ['memory_saving/cpp_extension/quantization.cc',
+            #      'memory_saving/cpp_extension/quantization_cuda_kernel.cu']
+            # ),
         ],
         cmdclass={'build_ext': cpp_extension.BuildExtension})
 
