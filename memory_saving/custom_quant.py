@@ -13,53 +13,55 @@ else:
     from . import native
     # from .clip import find_clip_aciq, find_clip_entropy, find_clip_mmse
     # from .cpp_extension import quantization as ext_quant
-# import pydevd
+import pydevd
 
 def pack_group(x, groups):
     input_shape = x.shape
     if len(input_shape) == 3:
         B, N, C = input_shape
-        x = x.reshape(B, N, groups, C // groups).permute(0, 1, 3, 2).reshape(-1, groups)
+        x = x.reshape(B, N, groups, C // groups).permute(0, 2, 1, 3).reshape(B, groups, -1)
     elif len(input_shape) == 2:
         B, C = input_shape
-        x = x.reshape(B, groups, C // groups).permute(0, 2, 1).reshape(-1, groups)
+        x = x.reshape(B, groups, C // groups)
     else:
         assert len(input_shape) == 4
         B, H, N, D = input_shape
         if groups != H:
             assert groups == 1
-            x = x.reshape(-1, 1)
+            x = x.reshape(B, H, -1)
         else:
-            x = x.permute(0, 2, 3, 1).reshape(-1, groups)
+            x = x.reshape(B, H, -1)
     return x
 
 def depack_group(x, groups, input_shape):
     if len(input_shape) == 3:
         B, N, C = input_shape
-        x = x.reshape(B, N, C // groups, groups).permute(0, 1, 3, 2).reshape(B, N, C)
+        x = x.reshape(B, groups, N, C // groups).permute(0, 2, 1, 3).reshape(B, N, C)
     elif len(input_shape) == 2:
         B, C = input_shape
-        x = x.reshape(B, C // groups, groups).permute(0, 2, 1).reshape(B, C)
+        x = x.reshape(B, C)
     else:
         B, H, N, D = input_shape
         if groups != H:
             assert groups == 1
             x = x.reshape(B, H, N, D)
         else:
-            x = x.reshape(B, N, D, groups).permute(0, 3, 1, 2)
+            x = x.reshape(B, H, N, D)
     return x
 
-def update_clip_val_shift(input, clip_val, shift, iteration, ema_decay):
-    max_value, _ = torch.max(input, dim=0)
-    min_value, _ = torch.min(input, dim=0)
+def update_clip_val_shift(input, iteration, ema_decay):
+    max_value, _ = torch.max(input, dim=-1)
+    min_value, _ = torch.min(input, dim=-1)
     clip_range = max_value - min_value
-    if iteration == 0:
-        clip_val.data = clip_range
-        shift.data = min_value
-    else:
-        clip_val.sub_((1 - ema_decay) * (clip_val - clip_range))
-        shift.sub_((1 - ema_decay) * (shift - min_value))
-    iteration.add_(1)
+    shift = min_value
+    return clip_range, shift
+    # if iteration == 0:
+    #     clip_val.data = clip_range
+    #     shift.data = min_value
+    # else:
+    #     clip_val.sub_((1 - ema_decay) * (clip_val - clip_range))
+    #     shift.sub_((1 - ema_decay) * (shift - min_value))
+    # iteration.add_(1)
 
 
 class Quant(object):
@@ -326,10 +328,11 @@ class Quant(object):
             x = pack_group(x, groups)
             quant_shape = x.shape
 
-            if training and not clip_val.requires_grad:
-                update_clip_val_shift(x.detach(), clip_val, shift, iteration, ema_decay)
+            clip_val, shift = update_clip_val_shift(x.detach(), iteration, ema_decay)
             setattr(ctx, 'clip_val{}'.format(identifier), clip_val)
             setattr(ctx, 'shift{}'.format(identifier), shift)
+            clip_val  = clip_val[:, :, None].expand_as(x)
+            shift = shift[:,:,None].expand_as(x)
 
             noise = x.new(x.shape).uniform_(-0.5, 0.5)
             y = (x - shift) / clip_val * (level - 1)
@@ -382,12 +385,16 @@ class Quant(object):
         else:
             clip_val = getattr(ctx, 'clip_val{}'.format(identifier))
             shift = getattr(ctx, 'shift{}'.format(identifier))
+
+            clip_val  = clip_val[:, :, None].expand_as(input)
+            shift = shift[:,:,None].expand_as(input)
+
             y = saved_tensors(input, level, dtype=clip_val.dtype) / (level - 1) * clip_val + shift
 
             # scale = ((level - 1) / clip_val.abs()).to(dtype=input_type)
             # shift = shift.to(dtype=input_type)
             # y = ext_quant.unpack_single_precision(input, 8, scale, shift, quant_shape[0], quant_shape[1], input_shape[0])
-            y = depack_group(y, clip_val.size()[0], input_shape)
+            y = depack_group(y, clip_val.size()[1], input_shape)
 
         setattr(ctx, 'clip_val{}'.format(identifier), None)
         setattr(ctx, 'shift{}'.format(identifier), None)
