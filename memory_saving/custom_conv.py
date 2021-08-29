@@ -5,9 +5,12 @@ import torch.nn.functional as F
 import sys
 import logging
 
-from . import native
-from . import packbit
-
+if 'memory_saving' not in __name__:
+    import packbit
+    import native
+else:
+    from . import packbit
+    from . import native
 # Uniform Quantization based Convolution
 class conv2d_uniform(torch.autograd.Function):
     @staticmethod
