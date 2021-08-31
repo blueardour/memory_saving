@@ -3,14 +3,18 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from . import native
-from . import custom_quant
-from . import packbit
+
+if 'memory_saving' not in __name__:
+    import custom_quant
+    import native
+else:
+    from . import custom_quant
+    from . import native
+
 
 class layer_norm(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, normalized_shape, weight, bias, eps, clip_val=None, level=256, \
-             iteration=None, ema_decay=None, groups=None, shift=None):
+    def forward(ctx, x, normalized_shape, weight, bias, eps, clip_val=None, level=256, iteration=None, ema_decay=None, groups=None, shift=None):
         custom_quant.Quant.forward(ctx, x, clip_val, level, iteration, ema_decay, groups, shift)
         if torch.__version__ >= "1.8":
             if x.is_cuda:
@@ -47,7 +51,7 @@ class layer_norm(torch.autograd.Function):
         x = custom_quant.Quant.restore(ctx)
         output_mask = [ctx.needs_input_grad[0], ctx.needs_input_grad[2], ctx.needs_input_grad[3]]
 
-        if torch.__version__  >= "1.8":
+        if torch.__version__ >= "1.8":
             mean, rstd, weight, bias, normalized_shape = ctx.layer_norm_parameters
             if grad_output.is_cuda:
                 grad_input, grad_weight, grad_bias = \
@@ -66,9 +70,9 @@ class layer_norm(torch.autograd.Function):
 
         return grad_input, None, grad_weight, grad_bias, None, None, None, None, None, None, None
 
+
 class LayerNorm(nn.LayerNorm, custom_quant.Quant):
-    def __init__(self, normalized_shape, eps=1e-05, elementwise_affine=True, \
-                memory_saving=False, args=None, logger=None, groups=1):
+    def __init__(self, normalized_shape, eps=1e-05, elementwise_affine=True, memory_saving=False, args=None, logger=None, groups=1):
         super(LayerNorm, self).__init__(normalized_shape, eps=eps, elementwise_affine=elementwise_affine)
         custom_quant.Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger, groups=groups)
         self.tag = 'layernorm'

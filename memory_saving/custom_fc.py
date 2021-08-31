@@ -8,12 +8,8 @@ import logging
 
 if 'memory_saving' not in __name__:
     import custom_quant
-    import packbit
-    import native
 else:
     from . import custom_quant
-    from . import packbit
-    from . import native
     
 class linear(torch.autograd.Function):
     @staticmethod
@@ -46,7 +42,7 @@ class linear(torch.autograd.Function):
         return grad_input, grad_weight, grad_bias, None, None, None, None, None, None
 
 class Linear(nn.Linear, custom_quant.Quant):
-    def __init__(self, in_features, out_features, bias=True, \
+    def __init__(self, in_features, out_features, bias=True,
             memory_saving=False, args=None, logger=None, groups=1):
         super(Linear, self).__init__(in_features, out_features, bias=bias)
         custom_quant.Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger, groups=groups)

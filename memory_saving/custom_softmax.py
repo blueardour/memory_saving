@@ -5,11 +5,9 @@ import torch.nn.functional as F
 
 if 'memory_saving' not in __name__:
     import custom_quant
-    import packbit
     import native
 else:
     from . import custom_quant
-    from . import packbit
     from . import native
 
 class softmax(torch.autograd.Function):

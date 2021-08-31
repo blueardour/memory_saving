@@ -7,21 +7,15 @@ import logging
 
 if 'memory_saving' not in __name__:
     import custom_quant
-    import packbit
-    import native
 else:
     from . import custom_quant
-    from . import packbit
-    from . import native
     
 class matmul(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input1, input2,
                 clip_val1=None, level1=256, iteration1=None, ema_decay1=None, groups1=None, shift1=None,
                 clip_val2=None, level2=256, iteration2=None, ema_decay2=None, groups2=None, shift2=None):
-  
-        # input1 = custom_quant.Quant.forward(ctx, input1, clip_val1, level1, iteration1, ema_decay1, groups1, shift1, '_1')
-        # input2 = custom_quant.Quant.forward(ctx, input2, clip_val2, level2, iteration2, ema_decay2, groups2, shift2, '_2')
+
         custom_quant.Quant.forward(ctx, input1, clip_val1, level1, iteration1, ema_decay1, groups1, shift1, '_1')
         custom_quant.Quant.forward(ctx, input2, clip_val2, level2, iteration2, ema_decay2, groups2, shift2, '_2')
         output = input1.matmul(input2)

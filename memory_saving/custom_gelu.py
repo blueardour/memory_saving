@@ -5,17 +5,14 @@ import torch.nn.functional as F
 
 if 'memory_saving' not in __name__:
     import custom_quant
-    import packbit
     import native
 else:
     from . import custom_quant
-    from . import packbit
     from . import native
 
 class gelu(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, clip_val=None, level=256, iteration=None, ema_decay=None, groups=None, shift=None):
-        # x =
         custom_quant.Quant.forward(ctx, x, clip_val, level, iteration, ema_decay, groups, shift)
         y = F.gelu(x)
         return y
