@@ -12,8 +12,8 @@ else:
     from . import packbit
     from . import native
     # from .clip import find_clip_aciq, find_clip_entropy, find_clip_mmse
-    # from .cpp_extension import quantization as ext_quant
-# import pydevd
+    from .cpp_extension import quantization as ext_quant
+import pydevd
 
 def pack_group(x, groups):
     input_shape = x.shape
@@ -264,17 +264,26 @@ class Quant(object):
 
         input_shape = x.shape
         y = pack_group(x, groups)
+        quant_shape = y.shape
 
         update_clip_val_shift(y.detach(), clip_val, shift, iteration, ema_decay)
-
-        noise = y.new(y.shape).uniform_(-0.5, 0.5)
-        y = (y - shift) / clip_val * (level - 1)
-        y = torch.round(y + noise)
-        y = torch.clamp(y, min=0, max=level - 1)
-
         setattr(ctx, 'clip_val{}'.format(identifier), clip_val)
         setattr(ctx, 'shift{}'.format(identifier), shift)
-        setattr(ctx, 'input{}'.format(identifier), y.to(torch.uint8))
+
+        scale = ((level - 1) / clip_val.abs()).to(dtype=x.dtype)
+        shift = shift.to(dtype=x.dtype)
+        group_size = input_shape[0] if input_shape[0] <= 512 else 512
+        y = ext_quant.pack_single_precision(y, scale, shift, 8, True, group_size)
+        setattr(ctx, 'input_type{}'.format(identifier), x.dtype)
+        setattr(ctx, 'quant_shape{}'.format(identifier), quant_shape)
+        setattr(ctx, 'input{}'.format(identifier), y)
+        # noise = y.new(y.shape).uniform_(-0.5, 0.5)
+        # y = (y - shift) / clip_val * (level - 1)
+        # y = torch.round(y + noise)
+        # y = torch.clamp(y, min=0, max=level - 1)
+
+
+        # setattr(ctx, 'input{}'.format(identifier), y.to(torch.uint8))
         setattr(ctx, 'input_shape{}'.format(identifier), input_shape)
         setattr(ctx, 'level{}'.format(identifier), level)
 
@@ -288,8 +297,18 @@ class Quant(object):
         clip_val = getattr(ctx, 'clip_val{}'.format(identifier))
         shift = getattr(ctx, 'shift{}'.format(identifier))
 
-        y = input.to(dtype=clip_val.dtype) / (level - 1) * clip_val + shift
+        quant_shape = getattr(ctx, 'quant_shape{}'.format(identifier))
+        input_type = getattr(ctx, 'input_type{}'.format(identifier))
+        scale = ((level - 1) / clip_val.abs()).to(dtype=input_type)
+        shift = shift.to(dtype=input_type)
+        group_size = input_shape[0] if input_shape[0] <= 512 else 512
+        y = ext_quant.unpack_single_precision(input, 8, scale, shift, quant_shape[0], quant_shape[1], group_size)
         y = depack_group(y, clip_val.size()[0], input_shape)
+        setattr(ctx, 'quant_shape{}'.format(identifier), None)
+        setattr(ctx, 'input_type{}'.format(identifier), None)
+
+        # y = input.to(dtype=clip_val.dtype) / (level - 1) * clip_val + shift
+        # y = depack_group(y, clip_val.size()[0], input_shape)
 
         setattr(ctx, 'input{}'.format(identifier), None)
         setattr(ctx, 'clip_val{}'.format(identifier), None)

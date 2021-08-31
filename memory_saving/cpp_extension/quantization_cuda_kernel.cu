@@ -11,7 +11,7 @@
 #include <curand_kernel.h>
 
 #define BLOCK_Y_DIM_MAX ((((int64_t)(1)) << 16) - 1)
-// #define fmax(a, b) ((a) > (b) ? (a): (b))
+#define fmax(a, b) ((a) > (b) ? (a): (b))
 // #define fmin(a, b) ((a) < (b) ? (a): (b))
 
 using torch::IntArrayRef;
@@ -41,13 +41,9 @@ __global__ void pack_single_precision_kernel(int32_t bits,
   const int64_t id = (no * num_groups + group_id) * group_size + d;
   const float noise = curand_uniform(&state);
 
-// //  mine
-//   auto quant_int_val = lrintf((data[id] - shift[group_id]) * scale[group_id] + noise - 0.5);
-//   uint8_t local_packed = fmax(0, fmin(255, quant_int_val));
-
 //   previous
   uint8_t local_packed = 0;
-  const int32_t val = __float2int_rn(fmaxf((data[id] - shift[group_id]) * scale[group_id] + noise - 0.5, 0.0f));
+  const int32_t val = __float2int_rn(fmax((data[id] - shift[group_id]) * scale[group_id] + noise - 0.5, 0.0f));
   local_packed |= val;
   packed[global_thread_id] = local_packed;
 }
