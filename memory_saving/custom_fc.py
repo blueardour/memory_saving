@@ -17,19 +17,19 @@ else:
     
 class linear(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, weight, bias=None, training=True, fp_forward=False, clip_val=None, level=256, non_negative_only=True, iteration=None, ema_decay=None, groups=None, stochastic_round=False, shift=None):
+    def forward(ctx, x, weight, bias=None, clip_val=None, level=256, iteration=None, ema_decay=None, groups=None, shift=None):
 
-        input = custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups, stochastic_round, shift)
+        custom_quant.Quant.forward(ctx, x, clip_val, level, iteration, ema_decay, groups, shift)
         ctx.save_for_backward(weight, bias)
 
-        output = input.matmul(weight.t())
+        output = x.matmul(weight.t())
         if bias is not None:
             output += bias.unsqueeze(0).expand_as(output)
         return output
 
     @staticmethod
     def backward(ctx, grad_output):
-        grad_input = grad_weight = grad_bias = grad_clip = None
+        grad_input = grad_weight = grad_bias = None
 
         weight, bias = ctx.saved_tensors
         input = custom_quant.Quant.restore(ctx)
@@ -43,15 +43,7 @@ class linear(torch.autograd.Function):
         if bias is not None and ctx.needs_input_grad[2]:
             grad_bias = grad_output.sum(0)
 
-        # if ctx.needs_input_grad[5] and grad_input is not None:
-        #     grad_clip = custom_quant.Quant.backward(ctx, grad_input)
-        # else:
-        #     setattr(ctx, 'clip_val{}'.format('_'), None)
-        #     setattr(ctx, 'shift{}'.format('_'), None)
-        #     setattr(ctx, 'non_negative_only{}'.format('_'), None)
-        #     setattr(ctx, 'level{}'.format('_'), None)
-
-        return grad_input, grad_weight, grad_bias, None, None, grad_clip, None, None, None, None, None, None, None
+        return grad_input, grad_weight, grad_bias, None, None, None, None, None, None
 
 class Linear(nn.Linear, custom_quant.Quant):
     def __init__(self, in_features, out_features, bias=True, \
@@ -65,30 +57,11 @@ class Linear(nn.Linear, custom_quant.Quant):
 
     def forward(self, x):
         if self.enable and self.training:
-            y = linear.apply(x, self.weight, self.bias, self.training, self.fp_forward, self.clip_val, self.level,
-                             self.non_negative_only, self.iteration, self.ema_decay, self.groups, self.stochastic_round, self.shift)
+            y = linear.apply(x, self.weight, self.bias, self.clip_val, self.level,
+                             self.iteration, self.ema_decay, self.groups, self.shift)
         else:
             y = F.linear(x, self.weight, self.bias)
         return y
-
-        # if self.init_phase:
-        #     assert self.training == False
-        #     self.init_base_on_search(x)
-        #     y = F.linear(x, self.weight, self.bias)
-        #     return y
-
-        # Previous 'warmup' can not save memory when training for the first few iterations
-        #
-        # if self.enable:
-        #     if self.stable > self.iteration.item():
-        #         self.init_based_on_warmup(x)
-        #         y = F.linear(x, self.weight, self.bias)
-        #     else:
-        #         y = linear.apply(x, self.weight, self.bias, self.training, self.fp_forward, self.clip_val, self.level, \
-        #             self.non_negative_only, self.iteration, self.ema_decay)
-        # else:
-        #     y = F.linear(x, self.weight, self.bias)
-        # return y
 
 if __name__ == "__main__":
     model = Linear(100, 100)
