@@ -15,6 +15,8 @@ else:
 class layer_norm(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, normalized_shape, weight, bias, eps, clip_val=None, level=256, iteration=None, ema_decay=None, groups=None, shift=None):
+        if x.dtype != weight.data.dtype:
+            x = x.to(dtype=weight.data.dtype)
         custom_quant.Quant.forward(ctx, x, clip_val, level, iteration, ema_decay, groups, shift)
         if torch.__version__ >= "1.8":
             if x.is_cuda:
