@@ -41,7 +41,6 @@ __global__ void pack_single_precision_kernel(int32_t bits,
   const int64_t id = (no * num_groups + group_id) * group_size + d;
   const float noise = curand_uniform(&state);
 
-//   previous
   uint8_t local_packed = 0;
   const int32_t val = __float2int_rn(fmax((data[id] - shift[group_id]) * scale[group_id] + noise - 0.5, 0.0f));
   local_packed |= val;
