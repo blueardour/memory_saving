@@ -337,8 +337,8 @@ class Quant(object):
             y = torch.clamp(y, min=0, max=level - 1)
             if training:
                 save_for_backward(y, signed=False)
-            if not fp_forward:
-                y = y / (level - 1) * clip_val + shift
+            # if not fp_forward:
+            #     y = y / (level - 1) * clip_val + shift
 
             # scale = ((level - 1) / clip_val.abs()).to(dtype=x.dtype)
             # shift = shift.to(dtype=x.dtype)
@@ -354,8 +354,9 @@ class Quant(object):
             setattr(ctx, 'quant_shape{}'.format(identifier), quant_shape)
             setattr(ctx, 'level{}'.format(identifier), level)
 
-        res = x if fp_forward else y
-        return depack_group(res, groups, input_shape)
+        # res = x if fp_forward else y
+        # return depack_group(x, groups, input_shape)
+
 
     @staticmethod
     def restore(ctx, identifier="_"):

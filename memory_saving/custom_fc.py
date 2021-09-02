@@ -19,10 +19,11 @@ class linear(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, weight, bias=None, training=True, fp_forward=False, clip_val=None, level=256, non_negative_only=True, iteration=None, ema_decay=None, groups=None, stochastic_round=False, shift=None):
 
-        input = custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups, stochastic_round, shift)
+        custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups, stochastic_round, shift)
+        # input = custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups, stochastic_round, shift)
         ctx.save_for_backward(weight, bias)
 
-        output = input.matmul(weight.t())
+        output = x.matmul(weight.t())
         if bias is not None:
             output += bias.unsqueeze(0).expand_as(output)
         return output

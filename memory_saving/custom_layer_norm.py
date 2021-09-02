@@ -13,7 +13,8 @@ class layer_norm(torch.autograd.Function):
             non_negative_only=True, iteration=None, ema_decay=None, groups=None, stochastic_round=False, shift=None):
         if x.dtype != weight.data.dtype:
             x = x.to(dtype=weight.data.dtype)
-        x = custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups, stochastic_round, shift)
+        custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups, stochastic_round, shift)
+        # x = custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups, stochastic_round, shift)
         if torch.__version__  >= "1.8":
             if x.is_cuda:
                 y, mean, rstd = native.layer_norm_forward_cuda(x, normalized_shape, weight, bias, eps)

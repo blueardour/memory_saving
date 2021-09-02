@@ -18,9 +18,11 @@ class softmax(torch.autograd.Function):
             fp_forward1=False, clip_val1=None, level1=256, non_negative_only1=True, iteration1=None, ema_decay1=None, groups1=None, stochastic_round1=False, shift1=None, \
             fp_forward2=False, clip_val2=None, level2=256, non_negative_only2=True, iteration2=None, ema_decay2=None, groups2=None, stochastic_round2=False, shift2=None):
 
-        x = custom_quant.Quant.forward(ctx, x, training, fp_forward1, clip_val1, level1, non_negative_only1, iteration1, ema_decay1, groups1, stochastic_round1, shift1, '_1')
+        custom_quant.Quant.forward(ctx, x, training, fp_forward1, clip_val1, level1, non_negative_only1, iteration1, ema_decay1, groups1, stochastic_round1, shift1, '_1')
+        # x = custom_quant.Quant.forward(ctx, x, training, fp_forward1, clip_val1, level1, non_negative_only1, iteration1, ema_decay1, groups1, stochastic_round1, shift1, '_1')
         y = F.softmax(x, dim)
-        y = custom_quant.Quant.forward(ctx, y, training, fp_forward2, clip_val2, level2, non_negative_only2, iteration2, ema_decay2, groups2, stochastic_round2, shift2, '_2')
+        custom_quant.Quant.forward(ctx, y, training, fp_forward2, clip_val2, level2, non_negative_only2, iteration2, ema_decay2, groups2, stochastic_round2, shift2, '_2')
+        # y = custom_quant.Quant.forward(ctx, y, training, fp_forward2, clip_val2, level2, non_negative_only2, iteration2, ema_decay2, groups2, stochastic_round2, shift2, '_2')
         ctx.dim = dim
         return y
 

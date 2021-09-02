@@ -15,7 +15,8 @@ else:
 class gelu(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, training=False, fp_forward=False, clip_val=None, level=256, non_negative_only=True, iteration=None, ema_decay=None, groups=None, stochastic_round=False, shift=None):
-        x = custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups, stochastic_round, shift)
+        custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups, stochastic_round, shift)
+        # x = custom_quant.Quant.forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups, stochastic_round, shift)
         y = F.gelu(x)
         return y
 
