@@ -67,7 +67,7 @@ class Quant(object):
         assert isinstance(self, nn.Module)
 
         self.enable = memory_saving or enable
-        self.fp_forward = False
+        self.fp_forward = True
         # quantizer
         self.iteration = nn.Parameter(torch.zeros(1), requires_grad=False)
         self.groups = groups
