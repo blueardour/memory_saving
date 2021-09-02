@@ -87,7 +87,7 @@ class Quant(object):
         self.requires_grad = False
         self.init_choice = 'mse'  # or 'entropy', 'mse'
         self.init_phase = False
-        self.stochastic_round = False
+        self.stochastic_round = True
         self.shift = nn.Parameter(torch.Tensor([0.] * groups))
 
         class logger_wrapper(object):
@@ -126,11 +126,10 @@ class Quant(object):
             #    self.level = 257
 
             self.verbose(
-                "index({})-clip_val({})-level({})-non_negative_only({})-groups({})-stochastic_round({})-({})".format(
-                    self.index, self.clip_val.tolist(), self.level, self.non_negative_only,
-                    self.groups, self.stochastic_round, self.shift.tolist()))
-        self.items = ['clip_val', 'level', 'stable', 'correlate', 'non_negative_only', 'warmup_choice', 'ema_decay',
-                      'requires_grad', 'init_choice', 'groups', 'stochastic_round', 'shift']
+                "index({})-level({})-groups({})".format(
+                    self.index, self.level,
+                    self.groups, ))
+        self.items = ['clip_val', 'level',  'ema_decay', 'groups', 'shift']
         self.clip_val.requires_grad = self.enable and self.requires_grad
         self.shift.requires_grad = self.enable and self.requires_grad
 
