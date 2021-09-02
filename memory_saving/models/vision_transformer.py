@@ -33,6 +33,8 @@ from timm.models.registry import register_model
 import memory_saving as ms
 import numpy as np
 
+from memory_saving.clip import find_clip_mmse
+
 __all__ = [
     'deit_ms_tiny_patch16_224',
     ]
@@ -118,23 +120,23 @@ def plot_act_dist_per_head(name, output):
         data = output
         for i in range(H):
             attn = data[:, i, ...].mean(dim=0).flatten().detach().cpu().numpy()
-            sns.histplot(attn, element="step", kde=False, color=colors[i], ax=ax, label='head-'+str(i))
-            # sns.histplot(attn, element="step", kde=False, color=(*random_colors[i], 0.3), ax=ax)
+            # sns.histplot(attn, element="step", kde=False, color=colors[i], ax=ax, label='head-'+str(i))
+            sns.histplot(attn, element="step", kde=False, color=(*random_colors[i], 0.3), ax=ax)
     else:
         groups = 3
         B, N, C = output.shape
         data = output.reshape(B, N, groups, C//groups).permute(0,2,1,3)
         for i in range(groups):
             attn = data[:, i, ...].mean(dim=0).flatten().detach().cpu().numpy()
-            sns.histplot(attn, element="step", kde=False, color=colors[i], ax=ax, label='head-'+str(i))
-            # sns.histplot(attn, element="step", kde=False, color=(*random_colors[i], 0.3), ax=ax)
+            # sns.histplot(attn, element="step", kde=False, color=colors[i], ax=ax, label='head-'+str(i))
+            sns.histplot(attn, element="step", kde=False, color=(*random_colors[i], 0.3), ax=ax)
 
     plt.title(f"{name}")
     plt.xlabel('Activations')
     plt.legend()
     img_name = f"{name}.png"
-    plt.savefig(os.path.join(save_root, img_name))
-    # plt.show()
+    # plt.savefig(os.path.join(save_root, img_name))
+    plt.show()
     # print('...')
 
 class AnalyseMlp(nn.Module):
@@ -290,6 +292,11 @@ class Attention(nn.Module):
         self.scale = qk_scale or head_dim ** -0.5
 
         self.qkv = ms.Linear(dim, dim * 3, bias=qkv_bias, groups=num_heads)
+
+        # self.q_norm = ms.LayerNorm(head_dim, groups=num_heads)
+        # self.k_norm = ms.LayerNorm(head_dim, groups=num_heads)
+        # self.v_norm = ms.LayerNorm(head_dim, groups=num_heads)
+
         self.softmax = ms.Softmax(dim=-1, groups=num_heads)
         self.attn_drop = nn.Dropout(attn_drop)
         self.proj = ms.Linear(dim, dim, groups=num_heads)
@@ -302,7 +309,14 @@ class Attention(nn.Module):
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
         q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
 
-        attn = self.mm1(q, k.transpose(-2, -1)) * self.scale
+        # q = self.q_norm(q)
+        # k = self.k_norm(k)
+        # v = self.v_norm(v)
+
+        # attn = self.mm1(q, k.transpose(-2, -1)) * self.scale
+        q = q * self.scale
+        attn = self.mm1(q, k.transpose(-2, -1))
+
         attn = self.softmax(attn)
         attn = self.attn_drop(attn)
 
@@ -584,6 +598,23 @@ def deit_ms_tiny_patch16_224(pretrained=False, **kwargs):
         model.load_state_dict(checkpoint["model"])
     return model
 
+
+@register_model
+def deit_ms_small_patch16_224(pretrained=False, **kwargs):
+    model = VisionTransformer(
+        patch_size=16, embed_dim=384, depth=12, num_heads=6, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(ms.LayerNorm, eps=1e-6), **kwargs)
+    model.default_cfg = _cfg()
+    return model
+
+
+@register_model
+def deit_ms_base_patch16_224(pretrained=False, **kwargs):
+    model = VisionTransformer(
+        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(ms.LayerNorm, eps=1e-6), **kwargs)
+    model.default_cfg = _cfg()
+    return model
 
 @register_model
 def vit_ms_small_patch16_224(pretrained=False, **kwargs):
