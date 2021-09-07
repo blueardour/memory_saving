@@ -19,39 +19,32 @@ def pack_group(x, groups):
     input_shape = x.shape
     if len(input_shape) == 3:
         B, N, C = input_shape
-        x = x.reshape(B, N, groups, C // groups).permute(0, 1, 3, 2).reshape(-1, groups)
+        x = x.reshape(B, N, groups, C // groups).permute(0, 1, 3, 2)
     elif len(input_shape) == 2:
         B, C = input_shape
-        x = x.reshape(B, groups, C // groups).permute(0, 2, 1).reshape(-1, groups)
+        x = x.reshape(B, groups, C // groups).permute(0, 2, 1)
     else:
         assert len(input_shape) == 4
-        B, H, N, D = input_shape
-        if groups != H:
-            assert groups == 1
-            x = x.reshape(-1, 1)
-        else:
-            x = x.permute(0, 2, 3, 1).reshape(-1, groups)
+        x = x.permute(0, 2, 3, 1)
     return x
 
 def depack_group(x, groups, input_shape):
     if len(input_shape) == 3:
         B, N, C = input_shape
-        x = x.reshape(B, N, C // groups, groups).permute(0, 1, 3, 2).reshape(B, N, C)
+        x = x.permute(0, 1, 3, 2).reshape(B, N, C)
     elif len(input_shape) == 2:
         B, C = input_shape
-        x = x.reshape(B, C // groups, groups).permute(0, 2, 1).reshape(B, C)
+        x = x.permute(0, 2, 1).reshape(B, C)
     else:
-        B, H, N, D = input_shape
-        if groups != H:
-            assert groups == 1
-            x = x.reshape(B, H, N, D)
-        else:
-            x = x.reshape(B, N, D, groups).permute(0, 3, 1, 2)
+        x =x.permute(0, 3, 1, 2)
     return x
 
 def update_clip_val_shift(input, clip_val, shift, iteration, ema_decay):
-    max_value, _ = torch.max(input, dim=0)
-    min_value, _ = torch.min(input, dim=0)
+    reduce_dim = tuple(range(len(input.size()) - 1))
+    max_value = torch.amax(input, reduce_dim)
+    min_value = torch.amin(input, reduce_dim)
+    # max_value, _ = torch.max(input, dim=0)
+    # min_value, _ = torch.min(input, dim=0)
     clip_range = max_value - min_value
     if iteration == 0:
         clip_val.data = clip_range
