@@ -13,38 +13,27 @@ else:
     from . import native
     # from .clip import find_clip_aciq, find_clip_entropy, find_clip_mmse
     # from .cpp_extension import quantization as ext_quant
-# import pydevd
+import pydevd
 
-def pack_group(x, groups):
-    input_shape = x.shape
-    if len(input_shape) == 3:
-        B, N, C = input_shape
-        x = x.reshape(B, N, groups, C // groups).permute(0, 1, 3, 2)
-    elif len(input_shape) == 2:
-        B, C = input_shape
-        x = x.reshape(B, groups, C // groups).permute(0, 2, 1)
-    else:
-        assert len(input_shape) == 4
-        x = x.permute(0, 2, 3, 1)
-    return x
 
-def depack_group(x, groups, input_shape):
-    if len(input_shape) == 3:
-        B, N, C = input_shape
-        x = x.permute(0, 1, 3, 2).reshape(B, N, C)
-    elif len(input_shape) == 2:
-        B, C = input_shape
-        x = x.permute(0, 2, 1).reshape(B, C)
+def save_for_backward(y, signed=True):
+    if level == 65536 and signed:
+        setattr(ctx, 'input{}'.format(identifier), y.to(torch.int16))
+    elif level == 256 and signed:
+        setattr(ctx, 'input{}'.format(identifier), y.to(torch.int8))
+    elif level == 256 and not signed:
+        setattr(ctx, 'input{}'.format(identifier), y.to(torch.uint8))
+    elif level == 16:  # not verified
+        setattr(ctx, 'input{}'.format(identifier), packbit.packbits_padded(y, dim=0, mask=3))
+    elif level == 4:  # not verified
+        setattr(ctx, 'input{}'.format(identifier), packbit.packbits_padded(y, dim=0, mask=15))
     else:
-        x =x.permute(0, 3, 1, 2)
-    return x
+        raise RuntimeError("un-supported quanitzation bit: {level}")
 
 def update_clip_val_shift(input, clip_val, shift, iteration, ema_decay):
     reduce_dim = tuple(range(len(input.size()) - 1))
     max_value = torch.amax(input, reduce_dim)
     min_value = torch.amin(input, reduce_dim)
-    # max_value, _ = torch.max(input, dim=0)
-    # min_value, _ = torch.min(input, dim=0)
     clip_range = max_value - min_value
     if iteration == 0:
         clip_val.data = clip_range
@@ -148,46 +137,6 @@ class Quant(object):
             string += "\n\t-" + str(self.norm)
 
         return string
-
-    # def init_based_on_warmup(self, data=None):
-    #     if (not self.enable and data is None) or not self.training:
-    #         return
-    #
-    #     iteration = self.iteration.item()
-    #     with torch.no_grad():
-    #         if hasattr(self, 'clip_val') and isinstance(self.clip_val, torch.Tensor):
-    #             temp = pack_group(data.abs(), self.groups)
-    #             max_value, _ = torch.max(temp, dim=0)
-    #             if self.correlate > 0:
-    #                 max_value = max_value * self.correlate
-    #
-    #             if self.warmup_choice == 'MA':
-    #                 self.clip_val.data = max_value + iteration * self.clip_val.data
-    #                 self.clip_val.div_(iteration + 1)
-    #             elif self.warmup_choice == 'EMA':
-    #                 if iteration == 0:
-    #                     self.clip_val.fill_(data.abs().max())
-    #                 else:
-    #                     self.clip_val.sub_((1 - self.ema_decay) * (self.clip_val - data.abs().max()))
-    #
-    #             if iteration == (self.stable - 1):
-    #                 self.verbose(f'update {self.tag} clip_val for index {self.index} to {self.clip_val.tolist()}')
-    #     self.iteration.add_(1)
-
-    # def init_base_on_search(self, data=None):
-    #     if self.level == 0:
-    #         return
-    #     if self.init_choice == 'aciq':
-    #         alpha_best, max_abs = find_clip_aciq(data.flatten(), int(math.log(self.level, 2)))
-    #     elif self.init_choice == 'mse':
-    #         alpha_best, max_abs = find_clip_mmse(data.flatten(), int(math.log(self.level, 2)))
-    #     elif self.init_choice == 'entropy':
-    #         alpha_best, max_abs = find_clip_entropy(data.flatten(), int(math.log(self.level, 2)))
-    #     else:
-    #         assert 1 == 0, "init choice not implemented"
-    #     with torch.no_grad():
-    #         self.clip_val.fill_(alpha_best)
-    #         self.verbose('update %s clip_val for index %d to %5.4f / %5.4f' % (self.tag, self.index, alpha_best, max_abs))
 
     def update_quantization_parameter(self, **parameters):
         feedback = dict()
@@ -293,101 +242,50 @@ class Quant(object):
 
     @staticmethod
     def forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups, stochastic_round, shift, identifier="_"):
+        if len(x.shape) == 4:
+            x = x.permute(0, 2, 3, 1)
 
-        def save_for_backward(y, signed=True):
-            if level == 65536 and signed:
-                setattr(ctx, 'input{}'.format(identifier), y.to(torch.int16))
-            elif level == 256 and signed:
-                setattr(ctx, 'input{}'.format(identifier), y.to(torch.int8))
-            elif level == 256 and not signed:
-                setattr(ctx, 'input{}'.format(identifier), y.to(torch.uint8))
-            elif level == 16:  # not verified
-                setattr(ctx, 'input{}'.format(identifier), packbit.packbits_padded(y, dim=0, mask=3))
-            elif level == 4:  # not verified
-                setattr(ctx, 'input{}'.format(identifier), packbit.packbits_padded(y, dim=0, mask=15))
-            else:
-                raise RuntimeError("un-supported quanitzation bit: {level}")
+        update_clip_val_shift(x, clip_val, shift, iteration, ema_decay)
+        setattr(ctx, 'clip_val{}'.format(identifier), clip_val)
+        setattr(ctx, 'shift{}'.format(identifier), shift)
 
-        input_shape = x.shape
-        batch_size = input_shape[0]
-        if level == 0:
-            y = x
-            if training:
-                setattr(ctx, 'input{}'.format(identifier), y)
-        else:
-            x = pack_group(x, groups)
-            quant_shape = x.shape
-
-            if training and not clip_val.requires_grad:
-                update_clip_val_shift(x.detach(), clip_val, shift, iteration, ema_decay)
-            setattr(ctx, 'clip_val{}'.format(identifier), clip_val)
-            setattr(ctx, 'shift{}'.format(identifier), shift)
-
-            noise = x.new(x.shape).uniform_(-0.5, 0.5)
-            y = (x - shift) / clip_val * (level - 1)
-            y = torch.round(y + noise)
-            y = torch.clamp(y, min=0, max=level - 1)
-            if training:
-                save_for_backward(y, signed=False)
-            # if not fp_forward:
-            #     y = y / (level - 1) * clip_val + shift
-
-            # scale = ((level - 1) / clip_val.abs()).to(dtype=x.dtype)
-            # shift = shift.to(dtype=x.dtype)
-            # y = ext_quant.pack_single_precision(x, scale, shift, 8, True, batch_size)
-            # setattr(ctx, 'input{}'.format(identifier), y)
-
-            # if not fp_forward:
-            #     y = ext_quant.unpack_single_precision(y, 8, scale, shift, quant_shape[0], quant_shape[1],
-            #                                           batch_size)
-
-            setattr(ctx, 'input_type{}'.format(identifier), x.dtype)
-            setattr(ctx, 'input_shape{}'.format(identifier), input_shape)
-            setattr(ctx, 'quant_shape{}'.format(identifier), quant_shape)
-            setattr(ctx, 'level{}'.format(identifier), level)
-
-        # res = x if fp_forward else y
-        # return depack_group(x, groups, input_shape)
-
+        noise = x.new(x.shape).uniform_(-0.5, 0.5)
+        x = (x - shift) / clip_val * (level - 1)
+        x = torch.round(x + noise)
+        x = torch.clamp(x, min=0, max=level - 1)
+        setattr(ctx, 'input{}'.format(identifier), x.to(torch.uint8))
+        setattr(ctx, 'input_shape{}'.format(identifier), x.shape)
+        setattr(ctx, 'level{}'.format(identifier), level)
 
     @staticmethod
     def restore(ctx, identifier="_"):
         # pydevd.settrace(suspend=False, trace_only_current_thread=True)
-        def saved_tensors(input, level, dtype):
-            if level in [65536, 256]:
-                output = input.to(dtype=dtype)
-            elif level == 16:
-                output = packbit.unpackbits_padded(input, dim=0, mask=3).to(dtype=dtype)
-            elif level == 4:
-                output = packbit.unpackbits_padded(input, dim=0, mask=15).to(dtype=dtype)
-            else:
-                raise RuntimeError("un-supported quanitzation bit: {level}")
-            return output
+        # def saved_tensors(input, level, dtype):
+        #     if level in [65536, 256]:
+        #         output = input.to(dtype=dtype)
+        #     elif level == 16:
+        #         output = packbit.unpackbits_padded(input, dim=0, mask=3).to(dtype=dtype)
+        #     elif level == 4:
+        #         output = packbit.unpackbits_padded(input, dim=0, mask=15).to(dtype=dtype)
+        #     else:
+        #         raise RuntimeError("un-supported quanitzation bit: {level}")
+        #     return output
 
-        input = getattr(ctx, 'input{}'.format(identifier))
+        y = getattr(ctx, 'input{}'.format(identifier))
         level = getattr(ctx, 'level{}'.format(identifier))
         input_shape = getattr(ctx, 'input_shape{}'.format(identifier))
-        input_type = getattr(ctx, 'input_type{}'.format(identifier))
-        quant_shape = getattr(ctx, 'quant_shape{}'.format(identifier))
+        clip_val = getattr(ctx, 'clip_val{}'.format(identifier))
+        shift = getattr(ctx, 'shift{}'.format(identifier))
+
+        y = y.to(dtype=clip_val.dtype) / (level - 1) * clip_val + shift
+        if len(input_shape) == 4:
+            y = y.permute(0, 3, 1, 2)
+
         setattr(ctx, 'input{}'.format(identifier), None)
-        if level == 0:
-            y = input
-        else:
-            clip_val = getattr(ctx, 'clip_val{}'.format(identifier))
-            shift = getattr(ctx, 'shift{}'.format(identifier))
-            y = saved_tensors(input, level, dtype=clip_val.dtype) / (level - 1) * clip_val + shift
-
-            # scale = ((level - 1) / clip_val.abs()).to(dtype=input_type)
-            # shift = shift.to(dtype=input_type)
-            # y = ext_quant.unpack_single_precision(input, 8, scale, shift, quant_shape[0], quant_shape[1], input_shape[0])
-            y = depack_group(y, clip_val.size()[0], input_shape)
-
         setattr(ctx, 'clip_val{}'.format(identifier), None)
         setattr(ctx, 'shift{}'.format(identifier), None)
         setattr(ctx, 'input_shape{}'.format(identifier), None)
-        setattr(ctx, 'quant_shape{}'.format(identifier), None)
         setattr(ctx, 'level{}'.format(identifier), None)
-        setattr(ctx, 'input_type{}'.format(identifier), None)
 
         return y
 

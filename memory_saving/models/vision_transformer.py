@@ -269,9 +269,9 @@ class Mlp(nn.Module):
         super().__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
-        self.fc1 = ms.Linear(in_features, hidden_features, groups=num_heads)
-        self.act = act_layer(groups=num_heads)
-        self.fc2 = ms.Linear(hidden_features, out_features, groups=num_heads)
+        self.fc1 = ms.Linear(in_features, hidden_features, groups=in_features)
+        self.act = act_layer(groups=hidden_features)
+        self.fc2 = ms.Linear(hidden_features, out_features, groups=hidden_features)
         self.drop = nn.Dropout(drop)
 
     def forward(self, x):
@@ -291,7 +291,7 @@ class Attention(nn.Module):
         # NOTE scale factor was wrong in my original version, can set manually to be compat with prev weights
         self.scale = qk_scale or head_dim ** -0.5
 
-        self.qkv = ms.Linear(dim, dim * 3, bias=qkv_bias, groups=num_heads)
+        self.qkv = ms.Linear(dim, dim * 3, bias=qkv_bias, groups=dim)
 
         # self.q_norm = ms.LayerNorm(head_dim, groups=num_heads)
         # self.k_norm = ms.LayerNorm(head_dim, groups=num_heads)
@@ -299,7 +299,7 @@ class Attention(nn.Module):
 
         self.softmax = ms.Softmax(dim=-1, groups=num_heads)
         self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = ms.Linear(dim, dim, groups=num_heads)
+        self.proj = ms.Linear(dim, dim, groups=dim)
         self.proj_drop = nn.Dropout(proj_drop)
         self.mm1 = ms.MatMul(groups=num_heads)
         self.mm2 = ms.MatMul(groups=num_heads)
@@ -331,12 +331,12 @@ class Block(nn.Module):
     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., act_layer=ms.GELU, norm_layer=ms.LayerNorm):
         super().__init__()
-        self.norm1 = norm_layer(dim, groups=num_heads)
+        self.norm1 = norm_layer(dim, groups=dim)
         self.attn = Attention(
             dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop)
         # NOTE: drop path for stochastic depth, we shall see if this is better than dropout here
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
-        self.norm2 = norm_layer(dim, groups=num_heads)
+        self.norm2 = norm_layer(dim, groups=dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop, num_heads=num_heads)
 
@@ -511,14 +511,10 @@ class VisionTransformer(nn.Module):
                 dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer)
             for i in range(depth)])
-        self.norm = norm_layer(embed_dim, groups=num_heads)
-
-        # NOTE as per official impl, we could have a pre-logits representation dense layer + tanh here
-        #self.repr = ms.Linear(embed_dim, representation_size)
-        #self.repr_act = nn.Tanh()
+        self.norm = norm_layer(embed_dim, groups=embed_dim)
 
         # Classifier head
-        self.head = ms.Linear(embed_dim, num_classes, groups=num_heads) if num_classes > 0 else nn.Identity()
+        self.head = ms.Linear(embed_dim, num_classes, groups=embed_dim) if num_classes > 0 else nn.Identity()
 
         trunc_normal_(self.pos_embed, std=.02)
         trunc_normal_(self.cls_token, std=.02)
