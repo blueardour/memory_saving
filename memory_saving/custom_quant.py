@@ -16,7 +16,7 @@ else:
 import pydevd
 
 
-def save_for_backward(y, signed=True):
+def save_for_backward(ctx, y, level, identifier, signed=True):
     if level == 65536 and signed:
         setattr(ctx, 'input{}'.format(identifier), y.to(torch.int16))
     elif level == 256 and signed:
@@ -49,28 +49,19 @@ class Quant(object):
         assert isinstance(self, nn.Module)
 
         self.enable = memory_saving or enable
-        self.fp_forward = True
-        # quantizer
         self.iteration = nn.Parameter(torch.zeros(1), requires_grad=False)
         self.groups = groups
-        self.clip_val = nn.Parameter(torch.Tensor([1.0] * groups))
+        self.clip_val = nn.Parameter(torch.Tensor([1.0] * groups), requires_grad=False)
         self.level = 0
-        self.non_negative_only = False
         self.tag = tag
         self.index = -1
         self.args = args
         self.string = 'ms.'
         self.repr = super(type(self), self).__repr__()
         self.logger = logger
-        self.stable = -1
-        self.correlate = 1.0
-        self.warmup_choice = 'MA'  # or 'EMA'
         self.ema_decay = 0.9
         self.requires_grad = False
-        self.init_choice = 'mse'  # or 'entropy', 'mse'
-        self.init_phase = False
-        self.stochastic_round = True
-        self.shift = nn.Parameter(torch.Tensor([0.] * groups))
+        self.shift = nn.Parameter(torch.Tensor([0.] * groups), requires_grad=False)
 
         class logger_wrapper(object):
             def info(self, string):
@@ -112,8 +103,8 @@ class Quant(object):
                     self.index, self.level,
                     self.groups, ))
         self.items = ['clip_val', 'level',  'ema_decay', 'groups', 'shift']
-        self.clip_val.requires_grad = self.enable and self.requires_grad
-        self.shift.requires_grad = self.enable and self.requires_grad
+        # self.clip_val.requires_grad = self.enable and self.requires_grad
+        # self.shift.requires_grad = self.enable and self.requires_grad
 
     def __str__(self):
         if hasattr(self, 'repr'):
@@ -216,8 +207,8 @@ class Quant(object):
                                 self.verbose('update global_buffer (current length: {}), key: {}'.format(
                                     len(self.args.global_buffer), key))
 
-        self.clip_val.requires_grad = self.enable and self.requires_grad
-        self.shift.requires_grad = self.enable and self.requires_grad
+        # self.clip_val.requires_grad = self.enable and self.requires_grad
+        # self.shift.requires_grad = self.enable and self.requires_grad
         if not self.enable:
             return None
         else:
@@ -240,8 +231,9 @@ class Quant(object):
                     self.index, self.tag)
             return feedback
 
+
     @staticmethod
-    def forward(ctx, x, training, fp_forward, clip_val, level, non_negative_only, iteration, ema_decay, groups, stochastic_round, shift, identifier="_"):
+    def forward(ctx, x, clip_val, level, iteration, ema_decay, groups, shift, identifier="_"):
         if len(x.shape) == 4:
             x = x.permute(0, 2, 3, 1)
 
