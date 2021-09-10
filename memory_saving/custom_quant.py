@@ -304,8 +304,8 @@ class Quant(object):
         scale = ((level - 1) / clip_val.abs()).to(dtype=x.dtype)
         shift = shift.to(dtype=x.dtype)
 
-        y = ext_quant.pack_single_precision(x, scale, shift, 8, True)
-        setattr(ctx, 'input{}'.format(identifier), y)
+        x = ext_quant.pack_single_precision(x, scale, shift, 8, True)
+        setattr(ctx, 'input{}'.format(identifier), x)
         setattr(ctx, 'level{}'.format(identifier), level)
 
         # cuda_dequant = ext_quant.unpack_single_precision(y, 8, scale, shift, quant_shape[0], quant_shape[1])
