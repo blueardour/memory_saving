@@ -5,33 +5,30 @@ import numpy as np
 
 def check_quant():
     diff = 0.
-
-
     for i in range(200):
-        data = torch.randn(128*197*197, 3).cuda()
+        data = torch.randn(3, 128*197*197).cuda()
         # temp = data.permute(0, 2, 1).reshape(-1, 3)
 
-        mins, _ = data.min(0)
-        maxs, _ = data.max(0)
+        mins, _ = data.min(1)
+        maxs, _ = data.max(1)
 
         level = 255
         scale = maxs - mins + 2e-6
         cuda_scales = 255 / scale
 
-        N, num_groups = data.shape
+        num_groups, group_size = data.shape
 
-        output = ext_quant.pack_single_precision(data, cuda_scales, mins, 8, True, 128)
-        dequant_out = ext_quant.unpack_single_precision(output, 8, cuda_scales, mins, N, num_groups,
-                                                        128)
+        output = ext_quant.pack_single_precision(data, cuda_scales, mins, 8, True)
+        dequant_out = ext_quant.unpack_single_precision(output, 8, cuda_scales, mins, num_groups, group_size)
         cuda_quant_error = (dequant_out - data).norm()
 
-        y = (data - mins) / scale * (level - 1)
-        noise = y.new(y.shape).uniform_(-0.5, 0.5)
-        y = torch.round(y + noise)
+        torch_data = data.permute(1, 0)
+        y = (torch_data - mins) / scale * (level - 1)
+        y = torch.round(y)
         y = torch.clamp(y, min=0, max=level - 1)
         torch_dequant_out = y / (level - 1) * scale + mins
 
-        torch_quant_error = (torch_dequant_out - data).norm()
+        torch_quant_error = (torch_dequant_out - torch_data).norm()
         cur_error = (cuda_quant_error - torch_quant_error).item()
         print(cur_error)
         diff += cur_error / data.numel()
@@ -97,7 +94,7 @@ def cuda_quant(data, mins, scales):
 
 def cuda_quant2(data, mins, scales):
     # cuda_scales = 255 / (maxs - mins + 2e-6)
-    output = ext_quant.pack_single_precision(data, scales, mins, 8, True, 128)
+    output = ext_quant.pack_single_precision(data, scales, mins, 8, True)
     # print('..')
 
 def torch_quant(data, mins, scales):
@@ -121,7 +118,7 @@ def test_cuda():
 
 
 if __name__ == '__main__':
-    check_quant()
+    # check_quant()
     # test_cuda()
     # # CUDA Forward: 61.892 us
     # # Torch Forward: 200.598 us
@@ -153,23 +150,30 @@ if __name__ == '__main__':
     # __float2int_rn
     # CUDA Forward: 92.401 us
     # Torch Forward: 584.516 us
-    # data = torch.randn(197 * 197 * 128, 3).cuda()
-    #
-    # mins, _ = data.min(0)
-    # maxs, _ = data.max(0)
-    #
-    # scales = 255 / (maxs - mins + 2e-6)
-    #
-    # forward = 0
-    # for _ in range(100000):
-    #     start = time.time()
-    #     cuda_quant2(data, mins, scales)
-    #     forward += time.time() - start
-    # print('CUDA Forward: {:.3f} us'.format(forward * 1e6 / 1e5))
-    #
-    # forward = 0
-    # for _ in range(10000):
-    #     start = time.time()
-    #     torch_quant(data, mins, scales)
-    #     forward += time.time() - start
-    # print('Torch Forward: {:.3f} us'.format(forward * 1e6 / 1e4))
+    head_list = [3, 6, 12]
+    for head in head_list:
+        print('head = ', head)
+        data = torch.randn(head, 197 * 197 * 128).cuda()
+
+        mins, _ = data.min(1)
+        maxs, _ = data.max(1)
+
+        scales = 255 / (maxs - mins + 2e-6)
+
+        cuda_forward = 0
+        for _ in range(10000):
+            start = time.time()
+            cuda_quant2(data, mins, scales)
+            cuda_forward += time.time() - start
+        print('CUDA Forward: {:.3f} us'.format(cuda_forward * 1e6 / 1e4))
+
+        torch_forward = 0
+        data = data.permute(1, 0)
+        for _ in range(10000):
+            start = time.time()
+            torch_quant(data, mins, scales)
+            torch_forward += time.time() - start
+        print('Torch Forward: {:.3f} us'.format(torch_forward * 1e6 / 1e4))
+
+        print('ratio = ', torch_forward / cuda_forward)
+        print()

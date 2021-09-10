@@ -13,45 +13,38 @@ else:
     from . import native
     # from .clip import find_clip_aciq, find_clip_entropy, find_clip_mmse
     from .cpp_extension import quantization as ext_quant
-# import pydevd
+import pydevd
 
 def pack_group(x, groups):
     input_shape = x.shape
     if len(input_shape) == 3:
         B, N, C = input_shape
-        x = x.reshape(B, N, groups, C // groups).permute(0, 1, 3, 2).reshape(-1, groups)
+        x = x.reshape(B, N, groups, C // groups).permute(2, 0, 1, 3).reshape(groups, -1).contiguous()
     elif len(input_shape) == 2:
         B, C = input_shape
-        x = x.reshape(B, groups, C // groups).permute(0, 2, 1).reshape(-1, groups)
+        x = x.reshape(B, groups, C // groups).permute(1, 0, 2).reshape(groups, -1).contiguous()
     else:
         assert len(input_shape) == 4
-        B, H, N, D = input_shape
-        if groups != H:
-            assert groups == 1
-            x = x.reshape(-1, 1)
-        else:
-            x = x.permute(0, 2, 3, 1).reshape(-1, groups)
+        # qkv or attn
+        x = x.permute(1, 0, 2, 3).reshape(groups, -1).contiguous()
     return x
 
 def depack_group(x, groups, input_shape):
     if len(input_shape) == 3:
         B, N, C = input_shape
-        x = x.reshape(B, N, C // groups, groups).permute(0, 1, 3, 2).reshape(B, N, C)
+        x = x.reshape(groups, B, N, C // groups).permute(1, 2, 0, 3).reshape(B, N, C)
     elif len(input_shape) == 2:
         B, C = input_shape
-        x = x.reshape(B, C // groups, groups).permute(0, 2, 1).reshape(B, C)
+        x = x.reshape(groups, B, C // groups).permute(1, 0, 2).reshape(B, C)
     else:
         B, H, N, D = input_shape
-        if groups != H:
-            assert groups == 1
-            x = x.reshape(B, H, N, D)
-        else:
-            x = x.reshape(B, N, D, groups).permute(0, 3, 1, 2)
+        # qkv or attn
+        x = x.reshape(groups, B, N, D).permute(1, 0, 2, 3)
     return x
 
 def update_clip_val_shift(input, clip_val, shift, iteration, ema_decay):
-    max_value, _ = torch.max(input, dim=0)
-    min_value, _ = torch.min(input, dim=0)
+    max_value = torch.amax(input, 1)
+    min_value = torch.amin(input, 1)
     clip_range = max_value - min_value
     if iteration == 0:
         clip_val.data = clip_range
@@ -263,29 +256,37 @@ class Quant(object):
     def forward(ctx, x, clip_val, level, iteration, ema_decay, groups, shift, identifier="_"):
 
         input_shape = x.shape
-        y = pack_group(x, groups)
-        quant_shape = y.shape
+        x = pack_group(x, groups)
+        quant_shape = x.shape
 
-        update_clip_val_shift(y.detach(), clip_val, shift, iteration, ema_decay)
+        update_clip_val_shift(x.detach(), clip_val, shift, iteration, ema_decay)
+        # max_value = torch.amax(x, 1)
+        # shift = torch.amin(x, 1)
+        # clip_val = max_value - shift
+
         setattr(ctx, 'clip_val{}'.format(identifier), clip_val)
         setattr(ctx, 'shift{}'.format(identifier), shift)
 
         scale = ((level - 1) / clip_val.abs()).to(dtype=x.dtype)
         shift = shift.to(dtype=x.dtype)
-        group_size = input_shape[0] if input_shape[0] <= 512 else 512
-        y = ext_quant.pack_single_precision(y, scale, shift, 8, True, group_size)
+        x = ext_quant.pack_single_precision(x, scale, shift, 8, True)
+
         setattr(ctx, 'input_type{}'.format(identifier), x.dtype)
         setattr(ctx, 'quant_shape{}'.format(identifier), quant_shape)
-        setattr(ctx, 'input{}'.format(identifier), y)
-        # noise = y.new(y.shape).uniform_(-0.5, 0.5)
-        # y = (y - shift) / clip_val * (level - 1)
-        # y = torch.round(y + noise)
-        # y = torch.clamp(y, min=0, max=level - 1)
-
-
-        # setattr(ctx, 'input{}'.format(identifier), y.to(torch.uint8))
+        setattr(ctx, 'input{}'.format(identifier), x)
         setattr(ctx, 'input_shape{}'.format(identifier), input_shape)
         setattr(ctx, 'level{}'.format(identifier), level)
+
+        # cuda_dequant = ext_quant.unpack_single_precision(y, 8, scale, shift, quant_shape[0], quant_shape[1])
+        # cuda_quant_error = (cuda_dequant - x).norm()
+        # torch_x = x.permute(1, 0)
+        # torch_y = (torch_x - shift) * scale
+        # torch_y = torch.round(torch_y)
+        # torch_y = torch.clamp(torch_y, min=0, max=level - 1)
+        # torch_y = torch_y / scale + shift
+        # torch_quant_error = (torch_y - torch_x).norm()
+        # dist = (cuda_quant_error - torch_quant_error).item()
+        # print(list(input_shape), dist)
 
     @staticmethod
     def restore(ctx, identifier="_"):
@@ -296,20 +297,16 @@ class Quant(object):
         input_shape = getattr(ctx, 'input_shape{}'.format(identifier))
         clip_val = getattr(ctx, 'clip_val{}'.format(identifier))
         shift = getattr(ctx, 'shift{}'.format(identifier))
-
         quant_shape = getattr(ctx, 'quant_shape{}'.format(identifier))
         input_type = getattr(ctx, 'input_type{}'.format(identifier))
+
         scale = ((level - 1) / clip_val.abs()).to(dtype=input_type)
         shift = shift.to(dtype=input_type)
-        group_size = input_shape[0] if input_shape[0] <= 512 else 512
-        y = ext_quant.unpack_single_precision(input, 8, scale, shift, quant_shape[0], quant_shape[1], group_size)
-        y = depack_group(y, clip_val.size()[0], input_shape)
+        y = ext_quant.unpack_single_precision(input, 8, scale, shift, quant_shape[0], quant_shape[1])
+        y = depack_group(y, quant_shape[0], input_shape)
+
         setattr(ctx, 'quant_shape{}'.format(identifier), None)
         setattr(ctx, 'input_type{}'.format(identifier), None)
-
-        # y = input.to(dtype=clip_val.dtype) / (level - 1) * clip_val + shift
-        # y = depack_group(y, clip_val.size()[0], input_shape)
-
         setattr(ctx, 'input{}'.format(identifier), None)
         setattr(ctx, 'clip_val{}'.format(identifier), None)
         setattr(ctx, 'shift{}'.format(identifier), None)
