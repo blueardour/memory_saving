@@ -13,7 +13,7 @@ else:
     from . import native
     # from .clip import find_clip_aciq, find_clip_entropy, find_clip_mmse
     from .cpp_extension import quantization as ext_quant
-import pydevd
+# import pydevd
 
 def pack_group(x, groups):
     input_shape = x.shape
@@ -266,15 +266,16 @@ class Quant(object):
 
         setattr(ctx, 'clip_val{}'.format(identifier), clip_val)
         setattr(ctx, 'shift{}'.format(identifier), shift)
+        setattr(ctx, 'input_type{}'.format(identifier), x.dtype)
+        setattr(ctx, 'input_shape{}'.format(identifier), input_shape)
 
         scale = ((level - 1) / clip_val.abs()).to(dtype=x.dtype)
         shift = shift.to(dtype=x.dtype)
         x = ext_quant.pack_single_precision(x, scale, shift, 8, True)
 
-        setattr(ctx, 'input_type{}'.format(identifier), x.dtype)
+
         setattr(ctx, 'quant_shape{}'.format(identifier), quant_shape)
         setattr(ctx, 'input{}'.format(identifier), x)
-        setattr(ctx, 'input_shape{}'.format(identifier), input_shape)
         setattr(ctx, 'level{}'.format(identifier), level)
 
         # cuda_dequant = ext_quant.unpack_single_precision(y, 8, scale, shift, quant_shape[0], quant_shape[1])
