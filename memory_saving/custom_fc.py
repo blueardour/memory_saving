@@ -17,11 +17,11 @@ class linear(torch.autograd.Function):
 
         custom_quant.Quant.forward(ctx, x, clip_val, level, iteration, ema_decay, groups, shift)
         ctx.save_for_backward(weight, bias)
-
-        output = x.matmul(weight.t())
-        if bias is not None:
-            output += bias.unsqueeze(0).expand_as(output)
-        return output
+        return F.linear(x, weight, bias)
+        # output = x.matmul(weight.t())
+        # if bias is not None:
+        #     output += bias.unsqueeze(0).expand_as(output)
+        # return output
 
     @staticmethod
     def backward(ctx, grad_output):

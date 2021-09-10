@@ -102,7 +102,6 @@ __global__ void unpack_single_precision_kernel(int32_t bits,
   const int64_t id = (blockIdx.y * gridDim.x + blockIdx.x) * blockDim.x + threadIdx.x;
   const int64_t group_id = blockIdx.y;
   unpacked[id] = ((scalar_t)val) / scale[group_id] + shift[group_id];
-//   unpacked[id] = ((scalar_t)val) + shift[group_id];
 }
 
 // Unpack int32 bit stream to float16/32 data
