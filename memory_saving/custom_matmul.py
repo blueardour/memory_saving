@@ -18,10 +18,9 @@ class matmul(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input1, input2,
             clip_val1=None, level1=256, iteration1=None, ema_decay1=None, groups1=None, shift1=None,
-            clip_val2=None, level2=256, iteration2=None, ema_decay2=None, groups2=None, shift2=None):
-  
-        custom_quant.Quant.forward(ctx, input1, clip_val1, level1, iteration1, ema_decay1, groups1, shift1, '_1')
-        custom_quant.Quant.forward(ctx, input2, clip_val2, level2, iteration2, ema_decay2, groups2, shift2, '_2')
+            clip_val2=None, level2=256, iteration2=None, ema_decay2=None, groups2=None, shift2=None, qk_matmul=None):
+        custom_quant.Quant.forward(ctx, input1, clip_val1, level1, iteration1, ema_decay1, groups1, shift1, identifier='_1')
+        custom_quant.Quant.forward(ctx, input2, clip_val2, level2, iteration2, ema_decay2, groups2, shift2, qk_matmul=qk_matmul, identifier='_2')
         output = input1.matmul(input2)
         return output
 
@@ -37,14 +36,15 @@ class matmul(torch.autograd.Function):
         if ctx.needs_input_grad[1]:
             grad_input2 = input1.transpose(-2, -1).to(dtype=grad_output.dtype).matmul(grad_output)
 
-        return grad_input1, grad_input2, None, None, None, None, None, None, None, None, None, None, None, None
+        return grad_input1, grad_input2, None, None, None, None, None, None, None, None, None, None, None, None, None
 
 class MatMul(nn.Module):
-    def __init__(self, memory_saving=False, args=None, logger=None, groups=1):
+    def __init__(self, memory_saving=False, args=None, logger=None, groups=1, qk_matmul=False):
         super(MatMul, self).__init__()
         self.quant1 = custom_quant.quantization(tag='matmul-1', groups=groups)
         self.quant2 = custom_quant.quantization(tag='matmul-2', groups=groups)
         self.tag = 'matmul'
+        self.qk_matmul = qk_matmul
 
     def update_quantization_parameter(self, **parameters):
         self.quant1.update_quantization_parameter(**parameters)
@@ -56,7 +56,8 @@ class MatMul(nn.Module):
                             self.quant1.clip_val, self.quant1.level,
                             self.quant1.iteration, self.quant1.ema_decay, self.quant1.groups, self.quant1.shift,
                             self.quant2.clip_val, self.quant2.level,
-                            self.quant2.iteration, self.quant2.ema_decay, self.quant2.groups, self.quant2.shift)
+                            self.quant2.iteration, self.quant2.ema_decay, self.quant2.groups, self.quant2.shift,
+                            self.qk_matmul)
         else:
             y = torch.matmul(x1, x2)
         return y

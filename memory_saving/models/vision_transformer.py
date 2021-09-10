@@ -301,8 +301,8 @@ class Attention(nn.Module):
         self.attn_drop = nn.Dropout(attn_drop)
         self.proj = ms.Linear(dim, dim, groups=dim)
         self.proj_drop = nn.Dropout(proj_drop)
-        self.mm1 = ms.MatMul(groups=num_heads)
-        self.mm2 = ms.MatMul(groups=num_heads)
+        self.mm1 = ms.MatMul(groups=dim, qk_matmul=True)
+        self.mm2 = ms.MatMul(groups=dim)
 
     def forward(self, x):
         B, N, C = x.shape
@@ -316,7 +316,7 @@ class Attention(nn.Module):
         # attn = self.mm1(q, k.transpose(-2, -1)) * self.scale
         q = q * self.scale
         attn = self.mm1(q, k.transpose(-2, -1))
-
+        # attn = self.mm1(q, k)
         attn = self.softmax(attn)
         attn = self.attn_drop(attn)
 
@@ -511,9 +511,11 @@ class VisionTransformer(nn.Module):
                 dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer)
             for i in range(depth)])
+        # self.norm = norm_layer(embed_dim, groups=embed_dim)
         self.norm = norm_layer(embed_dim, groups=embed_dim)
 
         # Classifier head
+        # self.head = nn.Linear(embed_dim, num_classes) if num_classes > 0 else nn.Identity()
         self.head = ms.Linear(embed_dim, num_classes, groups=embed_dim) if num_classes > 0 else nn.Identity()
 
         trunc_normal_(self.pos_embed, std=.02)

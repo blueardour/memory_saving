@@ -17,14 +17,15 @@ Tensor pack_single_precision_cuda(
     Tensor data, Tensor scale, Tensor shift, int bits, bool stochastic);
 
 Tensor unpack_single_precision_cuda(
-    Tensor data, int bits, Tensor scale, Tensor shift, int64_t B, int64_t N, int64_t C);
+    Tensor data, int bits, Tensor scale, Tensor shift, int64_t num_groups, int64_t group_size);
 
 // Pack/Unpack single precision
 Tensor pack_single_precision(Tensor data,
                              Tensor scale,
                              Tensor shift,
                              int bits,
-                             bool stochastic) {
+                             bool stochastic
+                             ) {
 
   return pack_single_precision_cuda(data, scale, shift, bits, stochastic);
 }
@@ -33,13 +34,12 @@ Tensor unpack_single_precision(Tensor data,
                                int bits,
                                Tensor scale,
                                Tensor shift,
-                               int64_t B,
-                               int64_t N,
-                               int64_t C) {
+                               int64_t num_groups,
+                               int64_t group_size) {
   CHECK_CUDA_TENSOR_DIM_TYPE(data, 1, torch::kInt8);
 
   return unpack_single_precision_cuda(data, bits, scale, shift,
-                                      B, N, C);
+                                      num_groups, group_size);
 }
 
 

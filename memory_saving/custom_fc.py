@@ -17,7 +17,7 @@ else:
     
 class linear(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, weight, bias=None, clip_val=None, level=256, iteration=None, ema_decay=None, groups=None,  shift=None):
+    def forward(ctx, x, weight, bias=None, clip_val=None, level=256, iteration=None, ema_decay=None, groups=None, shift=None):
         custom_quant.Quant.forward(ctx, x, clip_val, level, iteration, ema_decay, groups, shift)
         ctx.save_for_backward(weight, bias)
         return F.linear(x, weight, bias)

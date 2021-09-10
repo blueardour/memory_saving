@@ -18,9 +18,9 @@ class softmax(torch.autograd.Function):
             clip_val1=None, level1=256, iteration1=None, ema_decay1=None, groups1=None, shift1=None, \
             clip_val2=None, level2=256, iteration2=None, ema_decay2=None, groups2=None, shift2=None):
 
-        custom_quant.Quant.forward(ctx, x, clip_val1, level1, iteration1, ema_decay1, groups1, shift1, '_1')
+        custom_quant.Quant.forward(ctx, x, clip_val1, level1, iteration1, ema_decay1, groups1, shift1, identifier='_1')
         y = F.softmax(x, dim)
-        custom_quant.Quant.forward(ctx, y, clip_val2, level2, iteration2, ema_decay2, groups2, shift2, '_2')
+        custom_quant.Quant.forward(ctx, y, clip_val2, level2, iteration2, ema_decay2, groups2, shift2, identifier='_2')
         ctx.dim = dim
         return y
 
