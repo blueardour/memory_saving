@@ -342,6 +342,7 @@ class Quant(object):
 
         y = depack_group(y, input_shape, qk_matmul)
 
+        setattr(ctx, 'qk_matmul{}'.format(identifier), None)
         setattr(ctx, 'input{}'.format(identifier), None)
         setattr(ctx, 'clip_val{}'.format(identifier), None)
         setattr(ctx, 'shift{}'.format(identifier), None)
