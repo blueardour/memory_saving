@@ -281,6 +281,7 @@ class Quant(object):
         setattr(ctx, 'input_shape{}'.format(identifier), input_shape)
 
         x = pack_group(x, qk_matmul)
+        quant_shape = x.shape
 
         # check
         # mins = torch.amin(x, (1))
@@ -290,7 +291,7 @@ class Quant(object):
         # dequant_out = ext_quant.unpack_single_precision(output, 8, cuda_scales, mins, x.shape[0], x.shape[1])
         # cuda_quant_error = (dequant_out - x).norm()
         setattr(ctx, 'qk_matmul{}'.format(identifier), qk_matmul)
-        setattr(ctx, 'quant_shape{}'.format(identifier), x.shape)
+        setattr(ctx, 'quant_shape{}'.format(identifier), quant_shape)
 
         update_clip_val_shift(x, clip_val, shift, iteration, ema_decay)
         # max_value = torch.amax(x, 1)
