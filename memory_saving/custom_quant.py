@@ -19,15 +19,15 @@ def pack_group(x, groups):
     input_shape = x.shape
     if len(input_shape) == 3:
         B, N, C = input_shape
-        x = x.reshape(B, N, groups, C // groups).permute(2, 0, 1, 3).reshape(groups, -1).contiguous()
+        x = x.reshape(B, N, groups, C // groups).permute(2, 0, 1, 3).reshape(groups, -1)
     elif len(input_shape) == 2:
         B, C = input_shape
-        x = x.reshape(B, groups, C // groups).permute(1, 0, 2).reshape(groups, -1).contiguous()
+        x = x.reshape(B, groups, C // groups).permute(1, 0, 2).reshape(groups, -1)
     else:
         assert len(input_shape) == 4
         # qkv or attn
-        x = x.permute(1, 0, 2, 3).reshape(groups, -1).contiguous()
-    return x
+        x = x.permute(1, 0, 2, 3).reshape(groups, -1)
+    return x.contiguous()
 
 def depack_group(x, groups, input_shape):
     if len(input_shape) == 3:
@@ -40,7 +40,7 @@ def depack_group(x, groups, input_shape):
         B, H, N, D = input_shape
         # qkv or attn
         x = x.reshape(groups, B, N, D).permute(1, 0, 2, 3)
-    return x
+    return x.contiguous()
 
 def update_clip_val_shift(input, clip_val, shift, iteration, ema_decay):
     max_value = torch.amax(input, 1)
