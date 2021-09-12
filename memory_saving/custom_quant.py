@@ -20,9 +20,9 @@ def pack_group(x, is_key):
     input_shape = x.shape
     if len(input_shape) == 3:
         B, N, C = input_shape
-        x = x.permute(2, 0, 1).reshape(C, -1).contiguous()
+        x = x.permute(2, 0, 1).reshape(C, -1)
     elif len(input_shape) == 2:
-        x = x.permute(1, 0).contiguous()
+        x = x.permute(1, 0)
     else:
         assert len(input_shape) == 4
         B, H, N, D = input_shape
@@ -30,13 +30,13 @@ def pack_group(x, is_key):
             # qkv
             if is_key:
                 _, _, D, N = input_shape
-                x = x.permute(1, 2, 0, 3).reshape(H*D, B*N).contiguous()
+                x = x.permute(1, 2, 0, 3).reshape(H*D, B*N)
             else:
-                x = x.permute(1, 3, 0, 2).reshape(H*D, B*N).contiguous()
+                x = x.permute(1, 3, 0, 2).reshape(H*D, B*N)
         else:
             # attn
-            x = x.permute(1, 0, 2, 3).reshape(H, -1).contiguous()
-    return x
+            x = x.permute(1, 0, 2, 3).reshape(H, -1)
+    return x.contiguous()
 
 def depack_group(x, input_shape, is_key):
     if len(input_shape) == 3:
@@ -56,7 +56,7 @@ def depack_group(x, input_shape, is_key):
         else:
             # attn
             x = x.reshape(H, B, N, D).permute(1, 0, 2, 3)
-    return x
+    return x.contiguous()
 
 def save_for_backward(ctx, y, level, identifier, signed=True):
     if level == 65536 and signed:
