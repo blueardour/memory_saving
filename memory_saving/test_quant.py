@@ -2,6 +2,24 @@ import memory_saving.cpp_extension.quantization as ext_quant
 import time
 import torch
 import numpy as np
+import packbit
+
+def check_packbit():
+    data = torch.randn(3, 128 * 197 * 197).cuda()
+
+    mins, _ = data.min(1)
+    maxs, _ = data.max(1)
+
+    bits = 4
+    level = 2 ** bits - 1
+    scale = maxs - mins
+    cuda_scales = level / scale
+    num_groups, group_size = data.shape
+
+    output = ext_quant.pack_single_precision(data, cuda_scales, mins, 8, True)
+    dequant_out = ext_quant.unpack_single_precision(output, bits, cuda_scales, mins, num_groups, group_size)
+
+
 
 def check_quant():
     diff = 0.
@@ -12,21 +30,24 @@ def check_quant():
         mins, _ = data.min(1)
         maxs, _ = data.max(1)
 
-        level = 255
-        scale = maxs - mins + 2e-6
-        cuda_scales = 255 / scale
+        bits = 4
+        level = 2**bits - 1
+        scale = maxs - mins
+        cuda_scales = level / scale
 
         num_groups, group_size = data.shape
 
         output = ext_quant.pack_single_precision(data, cuda_scales, mins, 8, True)
-        dequant_out = ext_quant.unpack_single_precision(output, 8, cuda_scales, mins, num_groups, group_size)
+        dequant_out = ext_quant.unpack_single_precision(output, bits, cuda_scales, mins, num_groups, group_size)
         cuda_quant_error = (dequant_out - data).norm()
 
         torch_data = data.permute(1, 0)
-        y = (torch_data - mins) / scale * (level - 1)
+        noise = torch_data.new(torch_data.shape).uniform_(-0.5, 0.5)
+        y = (torch_data - mins) / scale * level
+        # y = torch.round(y + noise)
         y = torch.round(y)
-        y = torch.clamp(y, min=0, max=level - 1)
-        torch_dequant_out = y / (level - 1) * scale + mins
+        y = torch.clamp(y, min=0, max=level)
+        torch_dequant_out = (y / level) * scale + mins
 
         torch_quant_error = (torch_dequant_out - torch_data).norm()
         cur_error = (cuda_quant_error - torch_quant_error).item()
@@ -118,7 +139,7 @@ def test_cuda():
 
 
 if __name__ == '__main__':
-    # check_quant()
+    check_quant()
     # test_cuda()
     # # CUDA Forward: 61.892 us
     # # Torch Forward: 200.598 us
@@ -150,30 +171,30 @@ if __name__ == '__main__':
     # __float2int_rn
     # CUDA Forward: 92.401 us
     # Torch Forward: 584.516 us
-    head_list = [3, 6, 12]
-    for head in head_list:
-        print('head = ', head)
-        data = torch.randn(head, 197 * 197 * 128).cuda()
-
-        mins, _ = data.min(1)
-        maxs, _ = data.max(1)
-
-        scales = 255 / (maxs - mins + 2e-6)
-
-        cuda_forward = 0
-        for _ in range(10000):
-            start = time.time()
-            cuda_quant2(data, mins, scales)
-            cuda_forward += time.time() - start
-        print('CUDA Forward: {:.3f} us'.format(cuda_forward * 1e6 / 1e4))
-
-        torch_forward = 0
-        data = data.permute(1, 0)
-        for _ in range(10000):
-            start = time.time()
-            torch_quant(data, mins, scales)
-            torch_forward += time.time() - start
-        print('Torch Forward: {:.3f} us'.format(torch_forward * 1e6 / 1e4))
-
-        print('ratio = ', torch_forward / cuda_forward)
-        print()
+    # head_list = [3, 6, 12]
+    # for head in head_list:
+    #     print('head = ', head)
+    #     data = torch.randn(head, 197 * 197 * 128).cuda()
+    #
+    #     mins, _ = data.min(1)
+    #     maxs, _ = data.max(1)
+    #
+    #     scales = 255 / (maxs - mins + 2e-6)
+    #
+    #     cuda_forward = 0
+    #     for _ in range(10000):
+    #         start = time.time()
+    #         cuda_quant2(data, mins, scales)
+    #         cuda_forward += time.time() - start
+    #     print('CUDA Forward: {:.3f} us'.format(cuda_forward * 1e6 / 1e4))
+    #
+    #     torch_forward = 0
+    #     data = data.permute(1, 0)
+    #     for _ in range(10000):
+    #         start = time.time()
+    #         torch_quant(data, mins, scales)
+    #         torch_forward += time.time() - start
+    #     print('Torch Forward: {:.3f} us'.format(torch_forward * 1e6 / 1e4))
+    #
+    #     print('ratio = ', torch_forward / cuda_forward)
+    #     print()

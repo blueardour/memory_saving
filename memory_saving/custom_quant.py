@@ -273,7 +273,6 @@ class Quant(object):
         shift = shift.to(dtype=x.dtype)
         x = ext_quant.pack_single_precision(x, scale, shift, 8, True)
 
-
         setattr(ctx, 'quant_shape{}'.format(identifier), quant_shape)
         setattr(ctx, 'input{}'.format(identifier), x)
         setattr(ctx, 'level{}'.format(identifier), level)
@@ -303,7 +302,8 @@ class Quant(object):
 
         scale = ((level - 1) / clip_val.abs()).to(dtype=input_type)
         shift = shift.to(dtype=input_type)
-        y = ext_quant.unpack_single_precision(input, 8, scale, shift, quant_shape[0], quant_shape[1])
+        bits = int(level ** 0.5)
+        y = ext_quant.unpack_single_precision(input, bits, scale, shift, quant_shape[0], quant_shape[1])
         y = depack_group(y, quant_shape[0], input_shape)
 
         setattr(ctx, 'quant_shape{}'.format(identifier), None)
