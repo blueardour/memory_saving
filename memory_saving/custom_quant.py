@@ -259,10 +259,10 @@ class Quant(object):
         x = pack_group(x, groups)
         quant_shape = x.shape
 
-        update_clip_val_shift(x.detach(), clip_val, shift, iteration, ema_decay)
-        # max_value = torch.amax(x, 1)
-        # shift = torch.amin(x, 1)
-        # clip_val = max_value - shift
+        # update_clip_val_shift(x.detach(), clip_val, shift, iteration, ema_decay)
+        max_value = torch.amax(x, 1)
+        shift = torch.amin(x, 1)
+        clip_val = max_value - shift
 
         setattr(ctx, 'clip_val{}'.format(identifier), clip_val)
         setattr(ctx, 'shift{}'.format(identifier), shift)
