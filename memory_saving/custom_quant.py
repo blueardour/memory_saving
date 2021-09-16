@@ -15,56 +15,56 @@ else:
     from .cpp_extension import quantization as ext_quant
 # import pydevd
 
-def pack_group(x, groups):
-    input_shape = x.shape
-    if len(input_shape) == 3:
-        B, N, C = input_shape
-        x = x.reshape(B, N, groups, C // groups).permute(2, 0, 1, 3).reshape(groups, -1)
-    elif len(input_shape) == 2:
-        B, C = input_shape
-        x = x.reshape(B, groups, C // groups).permute(1, 0, 2).reshape(groups, -1)
-    else:
-        assert len(input_shape) == 4
-        # qkv or attn or conv
-        x = x.permute(1, 0, 2, 3).reshape(groups, -1)
-    return x.contiguous()
-
-def depack_group(x, groups, input_shape):
-    if len(input_shape) == 3:
-        B, N, C = input_shape
-        x = x.reshape(groups, B, N, C // groups).permute(1, 2, 0, 3).reshape(B, N, C)
-    elif len(input_shape) == 2:
-        B, C = input_shape
-        x = x.reshape(groups, B, C // groups).permute(1, 0, 2).reshape(B, C)
-    else:
-        B, H, N, D = input_shape
-        # qkv or attn or conv
-        x = x.reshape(groups, B, N, D).permute(1, 0, 2, 3)
-    return x.contiguous()
-
-# def pack_group(x):
+# def pack_group(x, groups):
 #     input_shape = x.shape
 #     if len(input_shape) == 3:
 #         B, N, C = input_shape
-#         x = x.permute(2, 0, 1).reshape(C, -1)
+#         x = x.reshape(B, N, groups, C // groups).permute(2, 0, 1, 3).reshape(groups, -1)
 #     elif len(input_shape) == 2:
-#         x = x.permute(1, 0)
+#         B, C = input_shape
+#         x = x.reshape(B, groups, C // groups).permute(1, 0, 2).reshape(groups, -1)
 #     else:
 #         assert len(input_shape) == 4
-#         B, H, N, D = input_shape
-#         x = x.permute(1, 0, 2, 3).reshape(H, -1)
+#         # qkv or attn or conv
+#         x = x.permute(1, 0, 2, 3).reshape(groups, -1)
 #     return x.contiguous()
 #
-# def depack_group(x, input_shape):
+# def depack_group(x, groups, input_shape):
 #     if len(input_shape) == 3:
 #         B, N, C = input_shape
-#         x = x.reshape(C, B, N).permute(1, 2, 0)
+#         x = x.reshape(groups, B, N, C // groups).permute(1, 2, 0, 3).reshape(B, N, C)
 #     elif len(input_shape) == 2:
-#         x = x.permute(1, 0)
+#         B, C = input_shape
+#         x = x.reshape(groups, B, C // groups).permute(1, 0, 2).reshape(B, C)
 #     else:
 #         B, H, N, D = input_shape
-#         x = x.reshape(H, B, N, D).permute(1, 0, 2, 3)
+#         # qkv or attn or conv
+#         x = x.reshape(groups, B, N, D).permute(1, 0, 2, 3)
 #     return x.contiguous()
+
+def pack_group(x):
+    input_shape = x.shape
+    if len(input_shape) == 3:
+        B, N, C = input_shape
+        x = x.permute(2, 0, 1).reshape(C, -1)
+    elif len(input_shape) == 2:
+        x = x.permute(1, 0)
+    else:
+        assert len(input_shape) == 4
+        B, H, N, D = input_shape
+        x = x.permute(1, 0, 2, 3).reshape(H, -1)
+    return x.contiguous()
+
+def depack_group(x, input_shape):
+    if len(input_shape) == 3:
+        B, N, C = input_shape
+        x = x.reshape(C, B, N).permute(1, 2, 0)
+    elif len(input_shape) == 2:
+        x = x.permute(1, 0)
+    else:
+        B, H, N, D = input_shape
+        x = x.reshape(H, B, N, D).permute(1, 0, 2, 3)
+    return x.contiguous()
 
 def update_clip_val_shift(input, clip_val, shift, iteration, ema_decay):
     max_value = torch.amax(input, 1)
@@ -280,8 +280,8 @@ class Quant(object):
     def forward(ctx, x, clip_val, level, iteration, ema_decay, quant_groups, shift, identifier="_"):
 
         input_shape = x.shape
-        x = pack_group(x, quant_groups)
-        # x = pack_group(x)
+        # x = pack_group(x, quant_groups)
+        x = pack_group(x)
         quant_shape = x.shape
 
         update_clip_val_shift(x.detach(), clip_val, shift, iteration, ema_decay)
@@ -329,8 +329,8 @@ class Quant(object):
         shift = shift.to(dtype=input_type)
         bits = int(level ** 0.5)
         y = ext_quant.unpack_single_precision(input, bits, scale, shift, quant_shape[0], quant_shape[1])
-        y = depack_group(y, quant_shape[0], input_shape)
-        # y = depack_group(y, input_shape)
+        # y = depack_group(y, quant_shape[0], input_shape)
+        y = depack_group(y, input_shape)
 
         setattr(ctx, 'quant_shape{}'.format(identifier), None)
         setattr(ctx, 'input_type{}'.format(identifier), None)
