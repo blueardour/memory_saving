@@ -82,7 +82,8 @@ def update_clip_val_shift(input, clip_val, shift, iteration, ema_decay):
 class Quant(object):
     def __init__(self, memory_saving=False, args=None, logger=None, enable=False, tag='fm', quant_groups=1):
         assert isinstance(self, nn.Module)
-
+        if type(quant_groups) is tuple:
+            quant_groups = quant_groups[0]
         self.enable = memory_saving or enable
         # self.fp_forward = True
         # quantizer
