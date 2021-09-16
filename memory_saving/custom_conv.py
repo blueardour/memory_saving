@@ -53,7 +53,7 @@ class conv2d_uniform(torch.autograd.Function):
         ctx.hyperparameters_conv = None
         return grad_input, grad_weight, grad_bias, None, None, None, None, None, None, None, None, None, None, None
 
-# TODO need to verify the correctness
+
 class Conv2d(nn.Conv2d, custom_quant.Quant):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, memory_saving=False, args=None, logger=None, quant_groups=1):
         super(Conv2d, self).__init__(in_channels, out_channels, kernel_size, stride=stride, padding=padding, dilation=dilation, groups=groups, bias=bias)
@@ -62,6 +62,9 @@ class Conv2d(nn.Conv2d, custom_quant.Quant):
         # constraints
         if self.padding_mode != 'zeros':
             raise NotImplementedError
+
+    def __repr__(self):
+        return self.__str__()
 
     def forward(self, x):
         if self.enable and self.training:

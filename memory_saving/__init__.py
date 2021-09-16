@@ -1,5 +1,5 @@
 
-from .custom_conv_bn import Conv2d
+from .custom_conv import Conv2d
 from .custom_bn import BatchNorm2d
 from .custom_relu import ReLU
 from .custom_gelu import GELU

@@ -119,13 +119,11 @@ class Quant(object):
             #    self.level = 257
 
             self.verbose(
-                "index({})-clip_val({})-level({})-non_negative_only({})-quant_groups({})-stochastic_round({})-({})".format(
-                    self.index, self.clip_val.tolist(), self.level, self.non_negative_only,
-                    self.quant_groups, self.stochastic_round, self.shift.tolist()))
-        self.items = ['clip_val', 'level', 'stable', 'ema_decay',
-                      'requires_grad', 'quant_groups']
-        self.clip_val.requires_grad = self.enable and self.requires_grad
-        self.shift.requires_grad = self.enable and self.requires_grad
+                "index({})-level({})-quant_groups({})".format(
+                    self.index, self.level, self.quant_groups,))
+        self.items = ['clip_val', 'level', 'stable', 'ema_decay', 'quant_groups']
+        self.clip_val.requires_grad = False
+        self.shift.requires_grad = False
 
     def __str__(self):
         if hasattr(self, 'repr'):
@@ -228,8 +226,10 @@ class Quant(object):
                                 self.verbose('update global_buffer (current length: {}), key: {}'.format(
                                     len(self.args.global_buffer), key))
 
-        self.clip_val.requires_grad = self.enable and self.requires_grad
-        self.shift.requires_grad = self.enable and self.requires_grad
+        # self.clip_val.requires_grad = self.enable and self.requires_grad
+        # self.shift.requires_grad = self.enable and self.requires_grad
+        self.clip_val.requires_grad = False
+        self.shift.requires_grad = False
         if not self.enable:
             return None
         else:

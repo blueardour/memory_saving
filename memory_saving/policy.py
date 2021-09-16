@@ -144,25 +144,32 @@ def deploy_on_epoch(model, policies, epoch, optimizer=None, verbose=print):
 def deploy_on_iteration(model, policies, iteration, optimizer=None, verbose=print):
     deploy_on_epoch(model, policies, iteration, optimizer, verbose)
 
-# def find_and_convert_layers(module, num_heads):
-#     for name, child in module.named_children():
-#         if isinstance(child, (ms.Linear,
-#                               ms.GELU,
-#                               ms.Softmax,
-#                               ms.LayerNorm)):
-#             continue
-#
-#         if isinstance(child, nn.Linear):
-#             setattr(module, name, ms.Linear(child.in_features, child.out_features, child.bias, groups=num_heads))
-#         elif isinstance(child, nn.GELU):
-#             setattr(module, name, ms.GELU(groups=num_heads))
-#         elif isinstance(child, nn.Softmax):
-#             setattr(module, name, ms.Softmax(dim=child.dim, groups=num_heads))
-#         elif isinstance(child, nn.LayerNorm):
-#             setattr(module, name, ms.LayerNorm(child.normalized_shape, groups=num_heads))
-#         else:
-#             find_and_convert_layers(child)
-# TODO rethink downstream tasks ...
+def find_and_convert_layers(module, groups=1):
+    for name, child in module.named_children():
+        if isinstance(child, (ms.Linear,
+                              ms.GELU,
+                              ms.Softmax,
+                              ms.LayerNorm,
+                              ms.Conv2d)):
+            continue
+
+        if hasattr(child, 'num_heads'):
+            groups = child.num_heads
+
+        if isinstance(child, nn.Linear):
+            setattr(module, name, ms.Linear(child.in_features, child.out_features, bias=child.bias is not None, quant_groups=groups))
+        if isinstance(child, nn.Conv2d):
+            setattr(module, name, ms.Conv2d(child.in_channels, child.out_channels, child.kernel_size, child.stride, padding=child.padding, dilation=child.dilation, groups=child.groups, bias=child.bias is not None, quant_groups=child.in_channels))
+        elif isinstance(child, nn.GELU):
+            setattr(module, name, ms.GELU(quant_groups=groups))
+        elif isinstance(child, nn.Softmax):
+            setattr(module, name, ms.Softmax(dim=child.dim, quant_groups=groups))
+        elif isinstance(child, nn.LayerNorm):
+            setattr(module, name, ms.LayerNorm(child.normalized_shape, quant_groups=groups))
+        else:
+            find_and_convert_layers(child, groups)
+
+
 
 if __name__ == "__main__":
     print("Loading policy")
