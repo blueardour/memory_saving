@@ -15,7 +15,7 @@ else:
 # Uniform Quantization based Convolution
 class conv2d_uniform(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, weight, bias, stride, padding, dilation, groups, level, clip_val, iteration, ema_decay, quant_groups, shift):
+    def forward(ctx, x, weight, bias, stride, padding, dilation, groups, clip_val, level, iteration, ema_decay, quant_groups, shift):
 
         custom_quant.Quant.forward(ctx, x, clip_val, level, iteration, ema_decay, quant_groups, shift)
         x = F.conv2d(x, weight, bias, stride, padding, dilation, groups)
@@ -65,9 +65,8 @@ class Conv2d(nn.Conv2d, custom_quant.Quant):
 
     def forward(self, x):
         if self.enable and self.training:
-            y = conv2d_uniform.apply(x, self.weight, self.bias, self.stride, self.padding, self.dilation,
-                                     self.groups, self.level,
-                                     self.clip_val, self.iteration, self.ema_decay, self.quant_groups, self.shift)
+            y = conv2d_uniform.apply(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups,
+                                     self.clip_val, self.level, self.iteration, self.ema_decay, self.quant_groups, self.shift)
         else:
             y = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
         return y

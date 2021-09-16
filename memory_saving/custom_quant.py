@@ -56,15 +56,15 @@ def update_clip_val_shift(input, clip_val, shift, iteration, ema_decay):
 
 
 class Quant(object):
-    def __init__(self, memory_saving=False, args=None, logger=None, enable=False, tag='fm', groups=1):
+    def __init__(self, memory_saving=False, args=None, logger=None, enable=False, tag='fm', quant_groups=1):
         assert isinstance(self, nn.Module)
 
         self.enable = memory_saving or enable
         # self.fp_forward = True
         # quantizer
         self.iteration = nn.Parameter(torch.zeros(1), requires_grad=False)
-        self.groups = groups
-        self.clip_val = nn.Parameter(torch.Tensor([1.0] * groups))
+        self.quant_groups = quant_groups
+        self.clip_val = nn.Parameter(torch.Tensor([1.0] * quant_groups))
         self.level = 256
         # self.non_negative_only = False
         self.tag = tag
@@ -81,7 +81,7 @@ class Quant(object):
         # self.init_choice = 'mse'  # or 'entropy', 'mse'
         # self.init_phase = False
         # self.stochastic_round = False
-        self.shift = nn.Parameter(torch.Tensor([0.] * groups))
+        self.shift = nn.Parameter(torch.Tensor([0.] * quant_groups))
 
         class logger_wrapper(object):
             def info(self, string):
@@ -119,11 +119,11 @@ class Quant(object):
             #    self.level = 257
 
             self.verbose(
-                "index({})-clip_val({})-level({})-non_negative_only({})-groups({})-stochastic_round({})-({})".format(
+                "index({})-clip_val({})-level({})-non_negative_only({})-quant_groups({})-stochastic_round({})-({})".format(
                     self.index, self.clip_val.tolist(), self.level, self.non_negative_only,
-                    self.groups, self.stochastic_round, self.shift.tolist()))
+                    self.quant_groups, self.stochastic_round, self.shift.tolist()))
         self.items = ['clip_val', 'level', 'stable', 'ema_decay',
-                      'requires_grad', 'groups']
+                      'requires_grad', 'quant_groups']
         self.clip_val.requires_grad = self.enable and self.requires_grad
         self.shift.requires_grad = self.enable and self.requires_grad
 
@@ -253,10 +253,10 @@ class Quant(object):
             return feedback
 
     @staticmethod
-    def forward(ctx, x, clip_val, level, iteration, ema_decay, groups, shift, identifier="_"):
+    def forward(ctx, x, clip_val, level, iteration, ema_decay, quant_groups, shift, identifier="_"):
 
         input_shape = x.shape
-        x = pack_group(x, groups)
+        x = pack_group(x, quant_groups)
         quant_shape = x.shape
 
         update_clip_val_shift(x.detach(), clip_val, shift, iteration, ema_decay)
@@ -366,9 +366,9 @@ class Quant(object):
 
 
 class quantization(nn.Module, Quant):
-    def __init__(self, memory_saving=False, args=None, logger=None, tag='fm', groups=None):
+    def __init__(self, memory_saving=False, args=None, logger=None, tag='fm', quant_groups=None):
         super(quantization, self).__init__()
-        Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger, tag=tag, groups=groups)
+        Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger, tag=tag, quant_groups=quant_groups)
 
     def __repr__(self):
         return self.__str__()

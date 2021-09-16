@@ -12,8 +12,8 @@ else:
 
 class gelu(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, clip_val=None, level=256, iteration=None, ema_decay=None, groups=None, shift=None):
-        custom_quant.Quant.forward(ctx, x, clip_val, level, iteration, ema_decay, groups, shift)
+    def forward(ctx, x, clip_val=None, level=256, iteration=None, ema_decay=None, quant_groups=None, shift=None):
+        custom_quant.Quant.forward(ctx, x, clip_val, level, iteration, ema_decay, quant_groups, shift)
         y = F.gelu(x)
         return y
 
@@ -28,9 +28,9 @@ class gelu(torch.autograd.Function):
         return grad_input, None, None, None, None, None, None
 
 class GELU(nn.GELU, custom_quant.Quant):
-    def __init__(self, memory_saving=False, args=None, logger=None, groups=1):
+    def __init__(self, memory_saving=False, args=None, logger=None, quant_groups=1):
         super(GELU, self).__init__()
-        custom_quant.Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger, groups=groups)
+        custom_quant.Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger, quant_groups=quant_groups)
         self.tag = 'gelu'
 
     def __repr__(self):
@@ -39,7 +39,7 @@ class GELU(nn.GELU, custom_quant.Quant):
     def forward(self, x):
         if self.enable and self.training:
             y = gelu.apply(x, self.clip_val, self.level,
-                           self.iteration, self.ema_decay, self.groups, self.shift)
+                           self.iteration, self.ema_decay, self.quant_groups, self.shift)
         else:
             y = F.gelu(x)
         return y

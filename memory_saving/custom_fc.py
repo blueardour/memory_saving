@@ -13,9 +13,9 @@ else:
     
 class linear(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, weight, bias=None, clip_val=None, level=256, iteration=None, ema_decay=None, groups=None, shift=None):
+    def forward(ctx, x, weight, bias=None, clip_val=None, level=256, iteration=None, ema_decay=None, quant_groups=None, shift=None):
 
-        custom_quant.Quant.forward(ctx, x, clip_val, level, iteration, ema_decay, groups, shift)
+        custom_quant.Quant.forward(ctx, x, clip_val, level, iteration, ema_decay, quant_groups, shift)
         ctx.save_for_backward(weight, bias)
         return F.linear(x, weight, bias)
         # output = x.matmul(weight.t())
@@ -43,9 +43,9 @@ class linear(torch.autograd.Function):
 
 class Linear(nn.Linear, custom_quant.Quant):
     def __init__(self, in_features, out_features, bias=True,
-            memory_saving=False, args=None, logger=None, groups=1):
+            memory_saving=False, args=None, logger=None, quant_groups=1):
         super(Linear, self).__init__(in_features, out_features, bias=bias)
-        custom_quant.Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger, groups=groups)
+        custom_quant.Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger, quant_groups=quant_groups)
         self.tag = 'fc'
 
     def __repr__(self):
@@ -54,7 +54,7 @@ class Linear(nn.Linear, custom_quant.Quant):
     def forward(self, x):
         if self.enable and self.training:
             y = linear.apply(x, self.weight, self.bias, self.clip_val, self.level,
-                             self.iteration, self.ema_decay, self.groups, self.shift)
+                             self.iteration, self.ema_decay, self.quant_groups, self.shift)
         else:
             y = F.linear(x, self.weight, self.bias)
         return y

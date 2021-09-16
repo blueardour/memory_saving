@@ -14,10 +14,10 @@ else:
 
 class layer_norm(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, normalized_shape, weight, bias, eps, clip_val=None, level=256, iteration=None, ema_decay=None, groups=None, shift=None):
+    def forward(ctx, x, normalized_shape, weight, bias, eps, clip_val=None, level=256, iteration=None, ema_decay=None, quant_groups=None, shift=None):
         if x.dtype != weight.data.dtype:
             x = x.to(dtype=weight.data.dtype)
-        custom_quant.Quant.forward(ctx, x, clip_val, level, iteration, ema_decay, groups, shift)
+        custom_quant.Quant.forward(ctx, x, clip_val, level, iteration, ema_decay, quant_groups, shift)
         if torch.__version__ >= "1.8":
             if x.is_cuda:
                 y, mean, rstd = native.layer_norm_forward_cuda(x, normalized_shape, weight, bias, eps)
@@ -74,9 +74,9 @@ class layer_norm(torch.autograd.Function):
 
 
 class LayerNorm(nn.LayerNorm, custom_quant.Quant):
-    def __init__(self, normalized_shape, eps=1e-05, elementwise_affine=True, memory_saving=False, args=None, logger=None, groups=1):
+    def __init__(self, normalized_shape, eps=1e-05, elementwise_affine=True, memory_saving=False, args=None, logger=None, quant_groups=1):
         super(LayerNorm, self).__init__(normalized_shape, eps=eps, elementwise_affine=elementwise_affine)
-        custom_quant.Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger, groups=groups)
+        custom_quant.Quant.__init__(self, memory_saving=memory_saving, args=args, logger=logger, quant_groups=quant_groups)
         self.tag = 'layernorm'
 
     def __repr__(self):
@@ -87,7 +87,7 @@ class LayerNorm(nn.LayerNorm, custom_quant.Quant):
         if self.enable and self.training:
             y = layer_norm.apply(x, self.normalized_shape, self.weight, self.bias, self.eps, \
                                 self.clip_val, self.level,
-                                 self.iteration, self.ema_decay, self.groups, self.shift)
+                                 self.iteration, self.ema_decay, self.quant_groups, self.shift)
         else:
             y = F.layer_norm(x, self.normalized_shape, self.weight, self.bias, self.eps)
         return y

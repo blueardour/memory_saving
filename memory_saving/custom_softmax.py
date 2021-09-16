@@ -13,11 +13,11 @@ else:
 class softmax(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, dim,
-                clip_val1=None, level1=256, iteration1=None, ema_decay1=None, groups1=None, shift1=None,
-                clip_val2=None, level2=256, iteration2=None, ema_decay2=None, groups2=None, shift2=None):
-        custom_quant.Quant.forward(ctx, x, clip_val1, level1, iteration1, ema_decay1, groups1, shift1, '_1')
+                clip_val1=None, level1=256, iteration1=None, ema_decay1=None, quant_groups1=None, shift1=None,
+                clip_val2=None, level2=256, iteration2=None, ema_decay2=None, quant_groups2=None, shift2=None):
+        custom_quant.Quant.forward(ctx, x, clip_val1, level1, iteration1, ema_decay1, quant_groups1, shift1, '_1')
         y = F.softmax(x, dim)
-        custom_quant.Quant.forward(ctx, y, clip_val2, level2, iteration2, ema_decay2, groups2, shift2, '_2')
+        custom_quant.Quant.forward(ctx, y, clip_val2, level2, iteration2, ema_decay2, quant_groups2, shift2, '_2')
         ctx.dim = dim
         return y
 
@@ -34,10 +34,10 @@ class softmax(torch.autograd.Function):
         return grad_input, None, None, None, None, None, None, None, None, None, None, None, None, None
 
 class Softmax(nn.Softmax):
-    def __init__(self, dim=None, memory_saving=False, args=None, logger=None, groups=1):
+    def __init__(self, dim=None, memory_saving=False, args=None, logger=None, quant_groups=1):
         super(Softmax, self).__init__(dim=dim)
-        self.quant1 = custom_quant.quantization(tag='softmax-1', groups=groups)
-        self.quant2 = custom_quant.quantization(tag='softmax-2', groups=groups)
+        self.quant1 = custom_quant.quantization(tag='softmax-1', quant_groups=quant_groups)
+        self.quant2 = custom_quant.quantization(tag='softmax-2', quant_groups=quant_groups)
         self.tag = 'softmax'
 
     def update_quantization_parameter(self, **parameters):
@@ -47,8 +47,8 @@ class Softmax(nn.Softmax):
     def forward(self, x):
         if self.quant1.enable and self.quant2.enable and self.training:
             y = softmax.apply(x, self.dim,
-                              self.quant1.clip_val, self.quant1.level, self.quant1.iteration, self.quant1.ema_decay, self.quant1.groups, self.quant1.shift,
-                              self.quant2.clip_val, self.quant2.level, self.quant2.iteration, self.quant2.ema_decay, self.quant2.groups, self.quant2.shift)
+                              self.quant1.clip_val, self.quant1.level, self.quant1.iteration, self.quant1.ema_decay, self.quant1.quant_groups, self.quant1.shift,
+                              self.quant2.clip_val, self.quant2.level, self.quant2.iteration, self.quant2.ema_decay, self.quant2.quant_groups, self.quant2.shift)
         else:
             y = F.softmax(x, self.dim)
         return y

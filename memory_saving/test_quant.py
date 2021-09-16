@@ -5,19 +5,26 @@ import numpy as np
 import packbit
 
 def check_packbit():
-    data = torch.randn(3, 128 * 197 * 197).cuda()
+    data = torch.randn(3, 128 * 197 * 64).cuda()
 
     mins, _ = data.min(1)
     maxs, _ = data.max(1)
 
-    bits = 4
+    bits = 2
     level = 2 ** bits - 1
     scale = maxs - mins
     cuda_scales = level / scale
     num_groups, group_size = data.shape
 
     output = ext_quant.pack_single_precision(data, cuda_scales, mins, 8, True)
-    dequant_out = ext_quant.unpack_single_precision(output, bits, cuda_scales, mins, num_groups, group_size)
+    pack_out = packbit.packbits_padded(output, dim=0, mask=3)
+    depack_out = packbit.unpackbits_padded(pack_out, dim=0, mask=3).to(dtype=output.dtype)
+
+    print(torch.all(torch.eq(depack_out, output)))
+    print('..')
+
+
+    # dequant_out = ext_quant.unpack_single_precision(output, bits, cuda_scales, mins, num_groups, group_size)
 
 
 
@@ -44,8 +51,8 @@ def check_quant():
         torch_data = data.permute(1, 0)
         noise = torch_data.new(torch_data.shape).uniform_(-0.5, 0.5)
         y = (torch_data - mins) / scale * level
-        # y = torch.round(y + noise)
         y = torch.round(y)
+        # y = torch.round(y)
         y = torch.clamp(y, min=0, max=level)
         torch_dequant_out = (y / level) * scale + mins
 
@@ -139,7 +146,7 @@ def test_cuda():
 
 
 if __name__ == '__main__':
-    check_quant()
+    check_packbit()
     # test_cuda()
     # # CUDA Forward: 61.892 us
     # # Torch Forward: 200.598 us
