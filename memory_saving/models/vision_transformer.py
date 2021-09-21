@@ -302,7 +302,8 @@ class Attention(nn.Module):
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
         q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
 
-        attn = self.mm1(q, k.transpose(-2, -1)) * self.scale
+        q = q * self.scale
+        attn = self.mm1(q, k.transpose(-2, -1))
         attn = self.softmax(attn)
         attn = self.attn_drop(attn)
 
