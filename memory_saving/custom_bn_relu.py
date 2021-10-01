@@ -29,8 +29,7 @@ class batchnorm2d_relu(torch.autograd.Function):
                 if hasattr(ctx, 'bn_output') and ctx.bn_output is not None:
                     bn_output = ctx.bn_output
                 else:
-                    bn_output = ctx.relu_output # this is not correct all the way
-
+                    bn_output = ctx.relu_output # there should be mapping from relu_output to relu_input
                 bn_weight, bn_bias, bn_running_mean, bn_running_var, bn_save_mean, bn_save_var, bn_reverse, bn_eps = ctx.bn_parameter
                 ctx.bn_input = torch.batch_norm_elemt(bn_output, torch.reciprocal(bn_save_var), bn_save_mean, bn_bias, torch.reciprocal(bn_weight), bn_eps)
                 bn_output = None

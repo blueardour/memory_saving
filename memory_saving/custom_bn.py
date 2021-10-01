@@ -168,12 +168,6 @@ class batchnorm2d(torch.autograd.Function):
             input = ctx.bn_input
             grad_input, grad_weight, grad_bias = native.batch_norm_backward(input, grad_output, weight, running_mean, running_var, \
                     save_mean, save_var, 0, reverse)
-            
-            input = ctx.tmp
-            test_input, test_weight, test_bias = native.batch_norm_backward(input, grad_output, weight, running_mean, running_var, \
-                    save_mean, save_var, 0, reverse)
-            import pdb
-            pdb.set_trace()
             ctx.bn_input = None
             ctx.bn_parameter = None
         ctx.need_sync = None
