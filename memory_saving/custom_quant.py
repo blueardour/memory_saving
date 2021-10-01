@@ -71,7 +71,6 @@ class Quant(object):
         self.index = -1
         self.args = args
         self.string = 'ms.'
-        self.repr = super(type(self), self).__repr__()
         self.logger = logger
         self.stable = -1
         self.correlate = 1.0
@@ -118,15 +117,14 @@ class Quant(object):
             # if self.level > 256:
             #    self.level = 257
 
-            self.verbose(
-                "index({})-level({})-groups({})".format(
-                    self.index, self.level,
-                    self.groups, ))
-        self.items = ['clip_val', 'level',  'ema_decay', 'groups', 'shift']
+            self.verbose("index({})-level({})-groups({})".format(
+                self.index, self.level, self.groups))
+        self.items = ['clip_val', 'level',  'ema_decay', 'groups', 'shift', 'dim', 'keep_tensor']
         self.clip_val.requires_grad = self.enable and self.requires_grad
         self.shift.requires_grad = self.enable and self.requires_grad
 
     def __str__(self):
+        string = ''
         if hasattr(self, 'repr'):
             string = self.repr
         if hasattr(self, 'string'):
@@ -145,8 +143,10 @@ class Quant(object):
                     string = string + "-{}({})".format(item, value)
 
         if hasattr(self, 'norm'):
-            string += "\n\t-" + str(self.norm)
+            string = "({}\n {}\n)".format(string, repr(self.norm))
 
+        if hasattr(self, 'relu'):
+            string = "({}\n {}\n)".format(string, repr(self.relu))
         return string
 
     # def init_based_on_warmup(self, data=None):

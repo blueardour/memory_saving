@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.backends.cudnn as cudnn
 import torch.autograd.profiler as profiler
 
-import memory_saving as ms
+#import memory_saving as ms
 
 import copy
 import sys
@@ -42,7 +42,7 @@ def demo():
 
     pdb.set_trace()
 
-def test(iteration=10, inplace=False):
+def test(module=None, iteration=10):
     seed = 2809
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
@@ -50,36 +50,14 @@ def test(iteration=10, inplace=False):
     torch.backends.cudnn.enabled = True
     torch.backends.cudnn.deterministic=True #https://github.com/pytorch/pytorch/issues/8019
 
-    relu = ms.ReLU
-
-    class Model(nn.Module):
-        def __init__(self, inplace=False):
-            super(Model, self).__init__()
-            self.conv = nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False)
-            self.relu = relu(inplace=inplace)
-
-        def forward(self, x):
-            x = self.conv(x)
-            x = self.relu(x)
-            return x
-
-    class Flatten(nn.Module):
-        def forward(self, input):
-            return input.view(input.size(0), -1)
-
-    model = nn.Sequential(
-            nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
-            ms.GELU(),
-            ms.LayerNorm([64,56,56]),
-            ms.Softmax(dim=-1),
-            #ms.BatchNorm2d(64),
-            )
-
-    for m in model.modules():
-        if isinstance(m, nn.Conv2d):
-            nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+    model = nn.Sequential()
+    model.add_module("conv1", nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False))
+    if module is not None:
+        model.add_module('test', module)
 
     model1 = copy.deepcopy(model)
+    model = model.cuda()
+    model1 = model1.cuda()
 
     for m in model.modules():
         if hasattr(m, 'enable'):
@@ -91,11 +69,11 @@ def test(iteration=10, inplace=False):
         if hasattr(m, 'level'):
             m.level = 257
 
-    model.train()
-    model1.train()
     print(model)
     print(model1)
 
+    model.train()
+    model1.train()
     def verbose(model, model1):
         for k, v in model.named_parameters():
             if v is not None and hasattr(v, 'grad') and v.grad is not None:
@@ -128,14 +106,14 @@ def test(iteration=10, inplace=False):
         print("index: ", i)
         x = torch.rand(512,64,56,56)
         x = x - 0.5
-        #x = x.cuda()
-        x1 = x.clone()
+        x = x.cuda()
 
         y = model(x)
         z = y.sum()
         z.backward()
         optimizer.step()
 
+        x1 = x.clone()
         y1 = model1(x1)
         z1 = y1.sum()
         z1.backward()
