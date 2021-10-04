@@ -25,8 +25,12 @@ def pack_group(x, groups):
         x = x.reshape(B, groups, C // groups).permute(1, 0, 2).reshape(groups, -1)
     else:
         assert len(input_shape) == 4
+        B, H, N, D = input_shape
         # qkv or attn or conv
-        x = x.permute(1, 0, 2, 3).reshape(groups, -1)
+        if groups < H:
+             x = x.permute(1, 0, 2, 3).reshape(groups, -1, B, N, D).reshape(groups, -1)
+        else:
+            x = x.permute(1, 0, 2, 3).reshape(groups, -1)
     return x.contiguous()
 
 def depack_group(x, groups, input_shape):
@@ -39,7 +43,10 @@ def depack_group(x, groups, input_shape):
     else:
         B, H, N, D = input_shape
         # qkv or attn or conv
-        x = x.reshape(groups, B, N, D).permute(1, 0, 2, 3)
+        if groups < H:
+            x = x.reshape(groups, -1, B, N, D).reshape(H, B, N, D).permute(1, 0, 2, 3)
+        else:
+            x = x.reshape(groups, B, N, D).permute(1, 0, 2, 3)
     return x.contiguous()
 
 # def pack_group(x):
