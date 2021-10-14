@@ -73,10 +73,10 @@ def depack_group(x, groups, input_shape):
 #         x = x.reshape(H, B, N, D).permute(1, 0, 2, 3)
 #     return x.contiguous()
 
-def update_clip_val_shift(input, clip_val, shift, iteration, ema_decay):
+def update_clip_val_shift(input, clip_val, shift, iteration, ema_decay, level):
     max_value = torch.amax(input, 1)
     min_value = torch.amin(input, 1)
-    clip_range = max_value - min_value
+    clip_range = torch.clamp(max_value - min_value, None, level-1)
     if iteration == 0:
         clip_val.data = clip_range
         shift.data = min_value
@@ -292,7 +292,7 @@ class Quant(object):
         # x = pack_group(x)
         quant_shape = x.shape
 
-        update_clip_val_shift(x.detach(), clip_val, shift, iteration, ema_decay)
+        update_clip_val_shift(x.detach(), clip_val, shift, iteration, ema_decay, level)
         # max_value = torch.amax(x, 1)
         # shift = torch.amin(x, 1)
         # clip_val = max_value - shift
@@ -335,8 +335,7 @@ class Quant(object):
 
         scale = ((level - 1) / clip_val.abs()).to(dtype=input_type)
         shift = shift.to(dtype=input_type)
-        bits = int(level ** 0.5)
-        y = ext_quant.unpack_single_precision(input, bits, scale, shift, quant_shape[0], quant_shape[1])
+        y = ext_quant.unpack_single_precision(input, 8, scale, shift, quant_shape[0], quant_shape[1])
         y = depack_group(y, quant_shape[0], input_shape)
         # y = depack_group(y, input_shape)
 
