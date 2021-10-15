@@ -157,8 +157,8 @@ def find_and_convert_layers(module, hidden_group_size):
             setattr(module, name, ms.Linear(child.in_features, child.out_features, bias=child.bias is not None, quant_groups=child.in_features//hidden_group_size))
         if isinstance(child, nn.Conv2d):
             setattr(module, name, ms.Conv2d(child.in_channels, child.out_channels, child.kernel_size, child.stride, padding=child.padding, dilation=child.dilation, groups=child.groups, bias=child.bias is not None, quant_groups=child.in_channels//hidden_group_size))
-        # elif isinstance(child, nn.GELU):
-        #     setattr(module, name, ms.GELU(quant_groups=groups))
+        elif isinstance(child, nn.ReLU):
+            setattr(module, name, ms.ReLU(inplace=False))
         # elif isinstance(child, nn.Softmax):
         #     setattr(module, name, ms.Softmax(dim=child.dim, quant_groups=groups))
         elif isinstance(child, nn.LayerNorm):

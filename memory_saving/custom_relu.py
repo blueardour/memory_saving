@@ -48,7 +48,7 @@ class ReLU(nn.ReLU, custom_quant.Quant):
         self.repr = super(ReLU, self).__repr__()
         custom_quant.Quant.__init__(self, args=args, logger=logger)
         self.dim = dim
-        self.keep_tensor = True
+        self.keep_tensor = False
 
     def __repr__(self):
         return self.__str__()

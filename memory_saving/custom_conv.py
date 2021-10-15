@@ -38,6 +38,7 @@ class conv2d_uniform(torch.autograd.Function):
         allow_tf32 = True
         output_mask = [True, True] #ctx.needs_input_grad[:2]
         grad_output = grad_output.to(dtype=weight.dtype)
+        x = x.to(dtype=weight.dtype)
         if torch.__version__ >= "1.7":
             grad_input, grad_weight = native.conv2d_backward(x, grad_output, weight, padding, stride, dilation, groups,
                     benchmark, deterministic, allow_tf32, output_mask)
