@@ -76,7 +76,7 @@ def depack_group(x, groups, input_shape):
 def update_clip_val_shift(input, clip_val, shift, iteration, ema_decay, level):
     max_value = torch.amax(input, 1)
     min_value = torch.amin(input, 1)
-    clip_range = torch.clamp(max_value - min_value, None, level-1)
+    clip_range = torch.clamp(max_value - min_value, None, 1024)
     if iteration == 0:
         clip_val.data = clip_range
         shift.data = min_value
