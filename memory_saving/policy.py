@@ -147,10 +147,11 @@ def deploy_on_iteration(model, policies, iteration, optimizer=None, verbose=prin
 def find_and_convert_layers(module, hidden_group_size):
     for name, child in module.named_children():
         if isinstance(child, (ms.Linear,
-                              # ms.GELU,
-                              # ms.Softmax,
+                              ms.GELU,
+                              ms.Softmax,
                               ms.LayerNorm,
-                              ms.Conv2d)):
+                              ms.Conv2d,
+                              ms.ReLU)):
             continue
 
         if isinstance(child, nn.Linear):
@@ -159,8 +160,6 @@ def find_and_convert_layers(module, hidden_group_size):
             setattr(module, name, ms.Conv2d(child.in_channels, child.out_channels, child.kernel_size, child.stride, padding=child.padding, dilation=child.dilation, groups=child.groups, bias=child.bias is not None, quant_groups=child.in_channels//hidden_group_size))
         elif isinstance(child, nn.ReLU):
             setattr(module, name, ms.ReLU(inplace=False))
-        # elif isinstance(child, nn.Softmax):
-        #     setattr(module, name, ms.Softmax(dim=child.dim, quant_groups=groups))
         elif isinstance(child, nn.LayerNorm):
             setattr(module, name, ms.LayerNorm(child.normalized_shape, quant_groups=child.normalized_shape[0]//hidden_group_size))
         else:
