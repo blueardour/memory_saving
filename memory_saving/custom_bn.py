@@ -3,8 +3,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from . import native
-from . import packbit
+if 'memory_saving' not in __name__:
+    import custom_quant
+    import packbit
+    import native
+else:
+    from . import custom_quant
+    from . import native
+    from . import packbit
 
 def SyncBatchNorm_forward(self, input, weight, bias, running_mean, running_var, eps, momentum, process_group, world_size):
     if not input.is_contiguous(memory_format=torch.channels_last):
@@ -43,8 +49,7 @@ def SyncBatchNorm_forward(self, input, weight, bias, running_mean, running_var, 
         eps,
         count_all.view(-1)
     )
-    
-    #self.save_for_backward = saved_input, weight, mean, invstd, count_all.to(torch.int32)
+
     self.process_group = process_group
 
     # apply element-wise normalization
@@ -159,45 +164,28 @@ class batchnorm2d(torch.autograd.Function):
             grad_output, grad_bn_weight, grad_bn_bias = SyncBatchNorm_backward(input, bn_weight, bn_mean, bn_invstd, bn_count_all, \
                     bn_process_group, ctx.needs_input_grad[7:9], grad_output)
         else:
-            input = ctx.bn_input
             weight, bias, running_mean, running_var, save_mean, save_var, reverse, eps = ctx.bn_parameter
+            input = ctx.bn_input
             grad_input, grad_weight, grad_bias = native.batch_norm_backward(input, grad_output, weight, running_mean, running_var, \
                     save_mean, save_var, 0, reverse)
             ctx.bn_input = None
             ctx.bn_parameter = None
         ctx.need_sync = None
 
-        #if not ctx.needs_input_grad[0]:
-        #    grad_input = None
-
-        #if not ctx.needs_input_grad[1]:
-        #    grad_weight = None
-
-        #if not ctx.needs_input_grad[2]:
-        #    grad_bias = None
-
         return grad_input, grad_weight, grad_bias, None, None, None, None, None, None, None, None
 
-class BatchNorm2d(nn.BatchNorm2d):
-    def __init__(self, num_features, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True, memory_saving=False):
+class BatchNorm2d(nn.BatchNorm2d, custom_quant.Quant):
+    def __init__(self, num_features, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True, args=None, logger=None):
         super(BatchNorm2d, self).__init__(num_features, eps=eps, momentum=momentum, affine=affine, track_running_stats=track_running_stats)
-        self.memory_saving = memory_saving
         self.repr = super(BatchNorm2d, self).__repr__()
+        custom_quant.Quant.__init__(self, args=args, logger=logger)
 
     def __repr__(self):
         return self.__str__()
 
-    def __str__(self):
-        if self.memory_saving:
-            string = 'ms.' + self.repr
-        else:
-            string = self.repr
-        if hasattr(self, 'relu'):
-            string += "\n\t-" + str(self.relu)
-        return string
-
     def forward(self, x):
-        if self.memory_saving:
+        if self.enable:
+            assert x.is_cuda, "Not supprot cpu mode yet"
             average_factor, training, mean, var, need_sync, process_group, world_size = bn_pre_forward(self, x)
             y = batchnorm2d.apply(x, self.weight, self.bias, mean, var, \
                 average_factor, training, need_sync, process_group, world_size, self.eps)
@@ -205,6 +193,10 @@ class BatchNorm2d(nn.BatchNorm2d):
             y = super().forward(x)
         return y
 
+if __name__ == "__main__":
+    model = BatchNorm2d(64, args=None)
+    print(model)
 
-
+    from test import test
+    test(model)
 
