@@ -12,6 +12,71 @@ import gc
 import pickle
 import pdb
 
+def test_sync_bn():
+    seed = 2809
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.enabled = True
+    torch.backends.cudnn.deterministic=True #https://github.com/pytorch/pytorch/issues/8019
+
+    class MSModel(nn.Module):
+        def __init__(self, inplace=False):
+            super(MSModel, self).__init__()
+            self.conv = nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False)
+            self.bn = ms.BatchNorm2d(64)
+            self.relu = nn.ReLU(inplace=True)
+
+        def forward(self, x):
+            x = self.conv(x)
+            x = self.bn(x)
+            x = self.relu(x)
+            return x
+
+    class NNModel(nn.Module):
+        def __init__(self, inplace=False):
+            super(NNModel, self).__init__()
+            self.conv = nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False)
+            self.bn = nn.BatchNorm2d(64)
+            self.relu = nn.ReLU(inplace=True)
+
+        def forward(self, x):
+            x = self.conv(x)
+            x = self.bn(x)
+            x = self.relu(x)
+            return x
+
+    msmodel = MSModel().cuda()
+    nnmodel = NNModel().cuda()
+
+    ms_state = msmodel.state_dict()
+    nn_state = nnmodel.state_dict()
+    for k, v in ms_state.items():
+        if k in nn_state:
+            nn_state[k] = v
+    nnmodel.load_state_dict(nn_state)
+
+    msmodel.bn.enable = True
+
+    input = torch.randn(4, 64, 16, 16).cuda()
+
+    res1 = msmodel(input)
+    z1 = res1.sum()
+    z1.backward()
+
+    res2 = nnmodel(input)
+    z2 = res2.sum()
+    z2.backward()
+
+    for ms_param, nn_param in zip(msmodel.parameters(), nnmodel.parameters()):
+        if ms_param.grad is not None:
+            equal = torch.all(torch.eq(ms_param.grad, nn_param.grad))
+            if not equal:
+                print('ms grad = ', ms_param.grad.norm())
+                print('nn grad = ', nn_param.grad.norm())
+                print('diff = ', ms_param.grad.norm() - nn_param.grad.norm())
+
+
 def demo():
     seed = 2809
     torch.manual_seed(seed)
@@ -355,8 +420,9 @@ def profile():
 
 if __name__ == "__main__":
     #demo()
-    test(inplace=True)
+    # test(inplace=True)
     #test(inplace=False)
     #profile()
+    test_sync_bn()
 
 
